@@ -1,0 +1,229 @@
+@page "/orders/new"
+@inject IOrdersApiClient OrdersApiClient
+
+<PageTitle>New Order | TillApp</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">Order entry</p>
+        <h1>New Order</h1>
+        <p>Choose products for the customer. The API will verify and recalculate the total.</p>
+    </div>
+    <a class="text-link" href="/orders">View unpaid orders</a>
+</div>
+
+@if (_successMessage is not null)
+{
+    <div class="status-message status-success" role="status">@_successMessage</div>
+}
+
+@if (_errorMessage is not null)
+{
+    <div class="status-message status-error" role="alert">
+        <strong>Order not placed.</strong>
+        <span>@_errorMessage</span>
+        @if (_serverValidationErrors.Count > 0)
+        {
+            <ul>
+                @foreach (var error in _serverValidationErrors)
+                {
+                    <li>@error</li>
+                }
+            </ul>
+        }
+    </div>
+}
+
+<EditForm EditContext="_editContext"
+          OnValidSubmit="PlaceOrderAsync"
+          OnInvalidSubmit="HandleInvalidSubmit"
+          class="order-workspace">
+    <DataAnnotationsValidator />
+
+    <section class="panel product-panel">
+        <div class="section-heading">
+            <div>
+                <span class="section-step">Step 1</span>
+                <h2>Customer and products</h2>
+            </div>
+        </div>
+
+        <div class="field-group">
+            <label for="order-name">Order name</label>
+            <InputText id="order-name"
+                       class="text-input"
+                       maxlength="100"
+                       autocomplete="off"
+                       placeholder="e.g. Table 4 or Alex"
+                       @bind-Value="_model.OrderName" />
+            <ValidationMessage For="@(() => _model.OrderName)" />
+        </div>
+
+        <fieldset class="product-picker">
+            <legend>Products</legend>
+            <p class="field-hint">Tap a product more than once to add multiple items.</p>
+            <div class="product-grid">
+                @foreach (var product in ProductCatalogue.All)
+                {
+                    <button type="button"
+                            class="product-button"
+                            disabled="@_isSubmitting"
+                            @onclick="() => AddProduct(product)">
+                        <span>@product.Name</span>
+                        <strong>@FormatCurrency(product.Price)</strong>
+                    </button>
+                }
+            </div>
+            <ValidationMessage For="@(() => _model.Items)" />
+        </fieldset>
+    </section>
+
+    <section class="panel basket-panel">
+        <div class="section-heading">
+            <div>
+                <span class="section-step">Step 2</span>
+                <h2>Selected items</h2>
+            </div>
+            <span class="item-count">@ItemCountLabel</span>
+        </div>
+
+        @if (_model.Items.Count == 0)
+        {
+            <div class="empty-basket">
+                <strong>No products selected</strong>
+                <span>Choose a product to begin this order.</span>
+            </div>
+        }
+        else
+        {
+            <ul class="selected-items">
+                @for (var index = 0; index < _model.Items.Count; index++)
+                {
+                    var itemIndex = index;
+                    var item = _model.Items[itemIndex];
+                    <li>
+                        <span>@item.Name</span>
+                        <strong>@FormatCurrency(item.Price)</strong>
+                        <button type="button"
+                                class="remove-button"
+                                disabled="@_isSubmitting"
+                                aria-label="Remove @item.Name"
+                                @onclick="() => RemoveProduct(itemIndex)">
+                            Remove
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+
+        <div class="order-total" aria-live="polite">
+            <span>Total</span>
+            <strong>@FormatCurrency(Total)</strong>
+        </div>
+
+        <button type="submit" class="button button-primary submit-button" disabled="@_isSubmitting">
+            @if (_isSubmitting)
+            {
+                <span class="spinner" aria-hidden="true"></span>
+                <span>Placing order…</span>
+            }
+            else
+            {
+                <span>Place Order</span>
+            }
+        </button>
+    </section>
+</EditForm>
+
+@code {
+    private NewOrderFormModel _model = new();
+    private EditContext _editContext = null!;
+    private bool _isSubmitting;
+    private string? _successMessage;
+    private string? _errorMessage;
+    private IReadOnlyList<string> _serverValidationErrors = [];
+
+    private decimal Total => _model.Items.Sum(item => item.Price);
+
+    private string ItemCountLabel => _model.Items.Count == 1 ? "1 item" : $"{_model.Items.Count} items";
+
+    protected override void OnInitialized()
+    {
+        _editContext = new EditContext(_model);
+    }
+
+    private void AddProduct(Product product)
+    {
+        _model.Items.Add(product);
+        NotifyItemsChanged();
+        _successMessage = null;
+    }
+
+    private void RemoveProduct(int index)
+    {
+        _model.Items.RemoveAt(index);
+        NotifyItemsChanged();
+        _successMessage = null;
+    }
+
+    private async Task PlaceOrderAsync()
+    {
+        if (_isSubmitting)
+        {
+            return;
+        }
+
+        _isSubmitting = true;
+        _successMessage = null;
+        _errorMessage = null;
+        _serverValidationErrors = [];
+
+        try
+        {
+            var request = new CreateOrderRequest
+            {
+                OrderName = _model.OrderName,
+                Items = _model.Items
+                    .Select(item => new CreateOrderItemRequest
+                    {
+                        ItemName = item.Name,
+                        Price = item.Price
+                    })
+                    .ToList()
+            };
+
+            var order = await OrdersApiClient.CreateOrderAsync(request);
+            _successMessage = $"Order #{order.OrderId} was placed successfully for {order.OrderName}.";
+            ResetForm();
+        }
+        catch (OrdersApiException exception)
+        {
+            _errorMessage = exception.Message;
+            _serverValidationErrors = exception.ValidationErrors.Values.SelectMany(errors => errors).ToList();
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private void HandleInvalidSubmit()
+    {
+        _successMessage = null;
+        _errorMessage = null;
+        _serverValidationErrors = [];
+    }
+
+    private void ResetForm()
+    {
+        _model = new NewOrderFormModel();
+        _editContext = new EditContext(_model);
+    }
+
+    private void NotifyItemsChanged()
+    {
+        _editContext.NotifyFieldChanged(new FieldIdentifier(_model, nameof(NewOrderFormModel.Items)));
+    }
+
+    private static string FormatCurrency(decimal amount) => $"£{amount:0.00}";
+}

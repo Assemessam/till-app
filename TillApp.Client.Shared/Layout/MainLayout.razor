@@ -1,0 +1,18 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <header class="app-header">
+        <div class="header-content">
+            <NavLink class="brand" href="/" Match="NavLinkMatch.All">TillApp</NavLink>
+            <nav aria-label="Primary navigation">
+                <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
+                <NavLink href="/orders/new">New Order</NavLink>
+                <NavLink href="/orders">Orders</NavLink>
+            </nav>
+        </div>
+    </header>
+
+    <main class="app-content">
+        @Body
+    </main>
+</div>

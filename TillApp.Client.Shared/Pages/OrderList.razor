@@ -1,0 +1,152 @@
+@page "/orders"
+@inject IOrdersApiClient OrdersApiClient
+
+<PageTitle>Unpaid Orders | TillApp</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">Payment queue</p>
+        <h1>Unpaid Orders</h1>
+        <p>Review open orders and mark them paid when payment is complete.</p>
+    </div>
+    <a class="button button-primary" href="/orders/new">New Order</a>
+</div>
+
+@if (_state == LoadState.Loading)
+{
+    <div class="state-panel" role="status" aria-live="polite">
+        <span class="spinner spinner-dark" aria-hidden="true"></span>
+        <strong>Loading unpaid orders…</strong>
+    </div>
+}
+else if (_state == LoadState.Error)
+{
+    <div class="state-panel state-error" role="alert">
+        <strong>We couldn’t load the unpaid orders.</strong>
+        <span>@_loadError</span>
+        <button type="button" class="button button-secondary" @onclick="LoadOrdersAsync">Retry</button>
+    </div>
+}
+else if (_orders.Count == 0)
+{
+    <div class="state-panel">
+        <strong>There are no unpaid orders.</strong>
+        <span>New orders will appear here as soon as they are placed.</span>
+        <a class="button button-primary" href="/orders/new">Create an order</a>
+    </div>
+}
+else
+{
+    @if (_actionError is not null)
+    {
+        <div class="status-message status-error" role="alert">@_actionError</div>
+    }
+
+    <div class="orders-grid">
+        @foreach (var order in _orders)
+        {
+            <article class="order-card" @key="order.OrderId">
+                <div class="order-card-heading">
+                    <div>
+                        <span class="order-number">Order #@order.OrderId</span>
+                        <h2>@order.OrderName</h2>
+                    </div>
+                    <strong class="order-amount">@FormatCurrency(order.Amount)</strong>
+                </div>
+
+                <div class="order-meta">@FormatItemCount(order.Items.Count)</div>
+
+                <ul class="order-items">
+                    @foreach (var item in order.Items)
+                    {
+                        <li>
+                            <span>@item.ItemName</span>
+                            <span>@FormatCurrency(item.Price)</span>
+                        </li>
+                    }
+                </ul>
+
+                <button type="button"
+                        class="button paid-button"
+                        disabled="@_payingOrderIds.Contains(order.OrderId)"
+                        @onclick="() => MarkPaidAsync(order)">
+                    @if (_payingOrderIds.Contains(order.OrderId))
+                    {
+                        <span class="spinner" aria-hidden="true"></span>
+                        <span>Updating…</span>
+                    }
+                    else
+                    {
+                        <span>Paid</span>
+                    }
+                </button>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private readonly HashSet<int> _payingOrderIds = [];
+    private List<OrderDto> _orders = [];
+    private LoadState _state = LoadState.Loading;
+    private string? _loadError;
+    private string? _actionError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrdersAsync();
+    }
+
+    private async Task LoadOrdersAsync()
+    {
+        _state = LoadState.Loading;
+        _loadError = null;
+        _actionError = null;
+
+        try
+        {
+            _orders = (await OrdersApiClient.GetUnpaidOrdersAsync()).ToList();
+            _state = LoadState.Loaded;
+        }
+        catch (OrdersApiException exception)
+        {
+            _loadError = exception.Message;
+            _state = LoadState.Error;
+        }
+    }
+
+    private async Task MarkPaidAsync(OrderDto order)
+    {
+        if (!_payingOrderIds.Add(order.OrderId))
+        {
+            return;
+        }
+
+        _actionError = null;
+
+        try
+        {
+            await OrdersApiClient.MarkOrderPaidAsync(order.OrderId);
+            _orders.RemoveAll(candidate => candidate.OrderId == order.OrderId);
+        }
+        catch (OrdersApiException exception)
+        {
+            _actionError = $"Order #{order.OrderId} was not marked paid. {exception.Message}";
+        }
+        finally
+        {
+            _payingOrderIds.Remove(order.OrderId);
+        }
+    }
+
+    private static string FormatCurrency(decimal amount) => $"£{amount:0.00}";
+
+    private static string FormatItemCount(int count) => count == 1 ? "1 item" : $"{count} items";
+
+    private enum LoadState
+    {
+        Loading,
+        Loaded,
+        Error
+    }
+}

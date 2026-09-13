@@ -1,0 +1,46 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+
+# User-specific IDE files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Test and coverage output
+[Tt]est[Rr]esult*/
+coverage/
+*.coverage
+*.coveragexml
+
+# Local tools and package caches
+.dotnet/
+.nuget/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.*.Local.json
+secrets.json
+*.pfx
+*.snk
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Android build/signing artifacts
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Logs
+*.log

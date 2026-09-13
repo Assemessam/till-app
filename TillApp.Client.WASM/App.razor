@@ -1,0 +1,8 @@
+﻿<Router AppAssembly="@typeof(App).Assembly"
+        AdditionalAssemblies="@(new[] { typeof(TillApp.Client.Shared.Pages.Home).Assembly })"
+        NotFoundPage="@typeof(TillApp.Client.Shared.Pages.NotFound)">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(TillApp.Client.Shared.Layout.MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+</Router>

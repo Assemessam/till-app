@@ -1,0 +1,52 @@
+#blazor-error-ui {
+    background: #fff3cd;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgb(0 0 0 / 20%);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.75rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+}
+
+.loading-progress {
+    display: block;
+    height: 8rem;
+    inset: 20vh 0 auto;
+    margin: auto;
+    position: absolute;
+    width: 8rem;
+}
+
+.loading-progress circle {
+    fill: none;
+    stroke: #e5e7eb;
+    stroke-width: 0.6rem;
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+}
+
+.loading-progress circle:last-child {
+    stroke: #2563eb;
+    stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
+    transition: stroke-dasharray 0.05s ease-in-out;
+}
+
+.loading-progress-text {
+    font-weight: 600;
+    inset: calc(20vh + 3.25rem) 0 auto;
+    position: absolute;
+    text-align: center;
+}
+
+.loading-progress-text::after {
+    content: var(--blazor-load-percentage-text, "Loading");
+}
