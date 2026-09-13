@@ -1,5 +1,7 @@
 # TillApp
 
+## Overview
+
 TillApp is a take-home full-stack food-ordering application. It provides an ASP.NET Core REST API backed by SQL Server, a Blazor WebAssembly browser client, and a .NET MAUI Blazor Hybrid Android client that reuse a shared Razor UI.
 
 ## Technology stack
@@ -25,9 +27,22 @@ TillApp is a take-home full-stack food-ordering application. It provides an ASP.
 
 Clients never reference the server. EF entities stay in the server, while API request and response types stay in `TillApp.Shared`.
 
-## Local SQL Server
+## Prerequisites
 
-Prerequisites are Docker with Compose and the .NET 10 SDK pinned by `global.json`.
+- Docker Engine with Docker Compose
+- .NET 10 SDK (the required SDK is pinned in `global.json`)
+- For Android: JDK 21, Android SDK platform/build-tools 36, platform-tools, Android Emulator, and the .NET `maui-android` workload
+
+## Quick Start
+
+### 1. Clone
+
+```bash
+git clone git@github.com:Assemessam/till-app.git
+cd till-app
+```
+
+### 2. Configure local environment
 
 Create the ignored local environment file and replace both placeholders with the same strong development password:
 
@@ -35,6 +50,8 @@ Create the ignored local environment file and replace both placeholders with the
 cp .env.example .env
 chmod 600 .env
 ```
+
+### 3. Start SQL Server
 
 Start only the project SQL Server service and wait until it reports `healthy`:
 
@@ -45,7 +62,7 @@ docker compose ps
 
 The Compose project uses the official `mcr.microsoft.com/mssql/server:2022-latest` image in Express mode, container `tillapp-sqlserver`, volume `tillapp-sqlserver-data`, and host port `1433`.
 
-## Connection configuration and migrations
+### 4. Apply EF Core migrations
 
 Load the ignored development values into the current shell, map the local connection string to ASP.NET Core's hierarchical configuration name, and apply migrations:
 
@@ -55,6 +72,7 @@ source .env
 set +a
 export ConnectionStrings__TillApp="$TILLAPP_CONNECTION_STRING"
 
+dotnet tool restore
 dotnet tool run dotnet-ef database update \
   --project TillApp.Server/TillApp.Server.csproj \
   --startup-project TillApp.Server/TillApp.Server.csproj
@@ -69,7 +87,7 @@ dotnet tool run dotnet-ef migrations add MigrationName \
   --output-dir Data/Migrations
 ```
 
-The reviewer-friendly standalone schema is in `database/create-database.sql`. It can be applied independently of EF Core:
+`database/create-database.sql` is the standalone assignment schema script. Use it **instead of** applying EF migrations when independently creating the main `TillApp` database:
 
 ```bash
 docker exec -i tillapp-sqlserver sh -c \
@@ -77,9 +95,9 @@ docker exec -i tillapp-sqlserver sh -c \
   < database/create-database.sql
 ```
 
-`database/ef-migrations.sql` is the separately generated idempotent EF migration script.
+`database/ef-migrations.sql` is a generated, idempotent EF migration script for deployment tooling. Evaluators do not need to run all three mechanisms: choose either the EF migration command above, the standalone assignment script, or the idempotent migration script as appropriate.
 
-## Run the API
+### 5. Run the API
 
 After exporting `ConnectionStrings__TillApp` as above:
 
@@ -89,12 +107,11 @@ dotnet run --project TillApp.Server/TillApp.Server.csproj --launch-profile http
 
 The API listens at `http://localhost:5080`. Development OpenAPI JSON is available at `http://localhost:5080/openapi/v1.json`.
 
-## Run the WebAssembly client
+### 6. Run the WebAssembly client
 
 Keep the API running and start the browser client in a second terminal:
 
 ```bash
-source .env.toolchain
 dotnet run --project TillApp.Client.WASM/TillApp.Client.WASM.csproj --launch-profile http
 ```
 
@@ -145,6 +162,8 @@ Run the complete build and formatting checks with:
 ```bash
 dotnet restore TillApp.sln
 dotnet build TillApp.sln
+dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj
+dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj
 dotnet format TillApp.sln --verify-no-changes --no-restore
 ```
 
@@ -161,7 +180,6 @@ The MAUI project targets `net10.0-android` for Ubuntu. It was verified on an And
 Create only one suitable x86_64 AVD after installing the API 36 image:
 
 ```bash
-source .env.toolchain
 yes | sdkmanager --install 'system-images;android-36;default;x86_64'
 printf 'no\n' | avdmanager create avd \
   --name TillApp_API36 \
