@@ -114,6 +114,10 @@ For local troubleshooting:
 - Confirm WASM is running at `http://localhost:5074`, which is explicitly allowed by the API's development CORS policy.
 - If the UI reports that the service is unavailable, check the API process first; form/order state is retained so the operation can be retried.
 
+### Manual browser acceptance record
+
+The following browser acceptance workflow was manually performed by the project owner in Chrome; it was not controlled or executed by the coding agent. The WebAssembly host loaded without CORS, unhandled Blazor, missing-asset, duplicate-request, or navigation errors. The tester verified order-name and empty-product validation; product selection, removal, re-addition, and the live total; creation of **Browser Lunch** with Coke (£2.20), Burger (£7.50), and Fries (£3.25) for **£12.95**; loading/disabled submission, success feedback, and form reset; and listing then marking that unpaid order as paid without a browser refresh, including the empty-state behavior.
+
 ## API endpoints
 
 | Method | Route | Purpose |
@@ -150,4 +154,48 @@ Routable components and layouts live in `TillApp.Client.Shared`. Both hosts incl
 
 The browser host reads `Api:BaseUrl` from its `wwwroot/appsettings.json`. The Android host uses the emulator host mapping `10.0.2.2` and permits a `TILLAPP_API_BASE_URL` override. Shared components contain no environment-specific API address.
 
-The MAUI project targets `net10.0-android` for Ubuntu. iOS and Mac Catalyst are not built or tested because no Mac build host is available. The shared UI compiles into the MAUI Android host, but MAUI runtime behavior and detailed Android deployment instructions belong to a later phase.
+## Android MAUI development
+
+The MAUI project targets `net10.0-android` for Ubuntu. It was verified on an Android API 36 x86_64 emulator using JDK 21, Android platform/build tools 36.0.0, the Android Emulator, and the .NET `maui-android` workload.
+
+Create only one suitable x86_64 AVD after installing the API 36 image:
+
+```bash
+source .env.toolchain
+yes | sdkmanager --install 'system-images;android-36;default;x86_64'
+printf 'no\n' | avdmanager create avd \
+  --name TillApp_API36 \
+  --package 'system-images;android-36;default;x86_64' \
+  --device pixel_4
+
+emulator -avd TillApp_API36 -no-snapshot -no-boot-anim -gpu swiftshader_indirect -memory 2048
+```
+
+Wait until `adb shell getprop sys.boot_completed` returns `1`. Start SQL Server and the API as described above, then deploy and launch the Android app with the current MAUI MSBuild target:
+
+```bash
+dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj \
+  -f net10.0-android \
+  -t:Run
+```
+
+The Android host uses `http://10.0.2.2:5080/` by default: `10.0.2.2` is the emulator's special mapping to the Ubuntu host, whereas Android `localhost` is the emulator itself. Set `TILLAPP_API_BASE_URL` before launch to override that host-level setting; shared Razor components never contain an environment-specific API URL.
+
+Android blocks cleartext HTTP by default. The Android manifest therefore uses a network-security configuration that permits HTTP only for the local emulator mapping `10.0.2.2`; it does not disable certificate validation or permit arbitrary cleartext hosts. This is a local-development requirement for the API URL above. Production deployments should use HTTPS and replace this development endpoint.
+
+Troubleshooting:
+
+- Ensure `tillapp-sqlserver` is healthy and the API responds on host port `5080` before launching MAUI.
+- Confirm exactly one intended device appears in `adb devices` and that Android has completed booting.
+- If the Orders screen reports the service unavailable, first verify the API with `curl http://localhost:5080/api/orders?isPaid=false`, then verify that the MAUI host is using `10.0.2.2`, not Android `localhost`.
+
+### Verified Android runtime acceptance
+
+The coding agent executed the Android runtime workflow on `TillApp_API36`: shared Home, New Order, and Orders navigation; order-name/product selection; removal and re-addition; the £12.95 total for Coke, Burger, and Fries; creation/reset/success feedback for **Android Lunch**; unpaid-list rendering; and payment/removal without restart. Independent API retrieval confirmed order #4 had amount `12.95`, three items, and `IsPaid: true` after payment. The phone-width layout was reviewed and the shared order-item grid was adjusted so item names and prices remain visually separated.
+
+Real emulator captures from that run:
+
+- [New Order with selected items and £12.95](docs/screenshots/android-new-order.png)
+- [Unpaid Android Lunch before payment](docs/screenshots/android-order-list.png)
+
+iOS and Mac Catalyst are not built or tested because no Mac build host is available.
