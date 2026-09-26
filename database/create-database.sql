@@ -12,6 +12,41 @@ GO
 USE [TillApp];
 GO
 
+IF OBJECT_ID(N'dbo.Categories', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[Categories]
+    (
+        [CategoryID] int IDENTITY(1, 1) NOT NULL,
+        [Name] nvarchar(100) NOT NULL,
+        CONSTRAINT [PK_Categories] PRIMARY KEY ([CategoryID]),
+        CONSTRAINT [UX_Categories_Name] UNIQUE ([Name])
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Products', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[Products]
+    (
+        [ProductID] int IDENTITY(1, 1) NOT NULL,
+        [CategoryID] int NOT NULL,
+        [Name] nvarchar(100) NOT NULL,
+        [UnitPrice] money NOT NULL,
+        [IsActive] bit NOT NULL
+            CONSTRAINT [DF_Products_IsActive] DEFAULT (CONVERT(bit, 1)),
+        CONSTRAINT [PK_Products] PRIMARY KEY ([ProductID]),
+        CONSTRAINT [CK_Products_UnitPrice]
+            CHECK ([UnitPrice] >= 0.0001 AND [UnitPrice] <= 922337203685477.5807),
+        CONSTRAINT [UX_Products_CategoryID_Name] UNIQUE ([CategoryID], [Name]),
+        CONSTRAINT [FK_Products_Categories_CategoryID]
+            FOREIGN KEY ([CategoryID]) REFERENCES [dbo].[Categories] ([CategoryID])
+    );
+
+    CREATE INDEX [IX_Products_CategoryID_IsActive]
+        ON [dbo].[Products] ([CategoryID], [IsActive]);
+END;
+GO
+
 IF OBJECT_ID(N'dbo.Orders', N'U') IS NULL
 BEGIN
     CREATE TABLE [dbo].[Orders]

@@ -67,3 +67,68 @@ END;
 
 COMMIT;
 GO
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260926084813_AddProductCatalogue'
+)
+BEGIN
+    CREATE TABLE [Categories] (
+        [CategoryID] int NOT NULL IDENTITY,
+        [Name] nvarchar(100) NOT NULL,
+        CONSTRAINT [PK_Categories] PRIMARY KEY ([CategoryID])
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260926084813_AddProductCatalogue'
+)
+BEGIN
+    CREATE TABLE [Products] (
+        [ProductID] int NOT NULL IDENTITY,
+        [CategoryID] int NOT NULL,
+        [Name] nvarchar(100) NOT NULL,
+        [UnitPrice] money NOT NULL,
+        [IsActive] bit NOT NULL DEFAULT CAST(1 AS bit),
+        CONSTRAINT [PK_Products] PRIMARY KEY ([ProductID]),
+        CONSTRAINT [CK_Products_UnitPrice] CHECK ([UnitPrice] >= 0.0001 AND [UnitPrice] <= 922337203685477.5807),
+        CONSTRAINT [FK_Products_Categories_CategoryID] FOREIGN KEY ([CategoryID]) REFERENCES [Categories] ([CategoryID]) ON DELETE NO ACTION
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260926084813_AddProductCatalogue'
+)
+BEGIN
+    CREATE UNIQUE INDEX [UX_Categories_Name] ON [Categories] ([Name]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260926084813_AddProductCatalogue'
+)
+BEGIN
+    CREATE INDEX [IX_Products_CategoryID_IsActive] ON [Products] ([CategoryID], [IsActive]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260926084813_AddProductCatalogue'
+)
+BEGIN
+    CREATE UNIQUE INDEX [UX_Products_CategoryID_Name] ON [Products] ([CategoryID], [Name]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260926084813_AddProductCatalogue'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260926084813_AddProductCatalogue', N'10.0.12');
+END;
+
+COMMIT;
+GO

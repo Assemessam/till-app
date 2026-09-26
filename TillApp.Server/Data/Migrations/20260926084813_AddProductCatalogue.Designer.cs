@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TillApp.Server.Data;
 
@@ -10,9 +11,11 @@ using TillApp.Server.Data;
 namespace TillApp.Server.Data.Migrations
 {
     [DbContext(typeof(TillAppDbContext))]
-    partial class TillAppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260926084813_AddProductCatalogue")]
+    partial class AddProductCatalogue
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
