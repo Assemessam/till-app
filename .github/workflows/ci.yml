@@ -1,0 +1,74 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies
+        run: |
+          dotnet restore TillApp.Server.Tests/TillApp.Server.Tests.csproj
+          dotnet restore TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj
+          dotnet restore TillApp.Client.WASM/TillApp.Client.WASM.csproj
+
+      - name: Prepare isolated SQL Server settings
+        shell: bash
+        run: |
+          ci_sql_password="TillAppCi!${GITHUB_RUN_ID}a"
+          {
+            echo "TILLAPP_CI_SQL_PASSWORD=$ci_sql_password"
+            echo "TILLAPP_TEST_CONNECTION_STRING=Server=localhost,1433;Database=TillAppTests;User Id=sa;Password=$ci_sql_password;Encrypt=True;TrustServerCertificate=True"
+          } >> "$GITHUB_ENV"
+
+      - name: Start SQL Server
+        run: |
+          docker run --detach --name tillapp-ci-sql \
+            --env ACCEPT_EULA=Y \
+            --env MSSQL_PID=Express \
+            --env MSSQL_SA_PASSWORD="$TILLAPP_CI_SQL_PASSWORD" \
+            --publish 1433:1433 \
+            mcr.microsoft.com/mssql/server:2022-latest
+
+      - name: Wait for SQL Server
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if docker exec tillapp-ci-sql /opt/mssql-tools18/bin/sqlcmd \
+              -S localhost -U sa -P "$TILLAPP_CI_SQL_PASSWORD" -C -Q "SELECT 1" -b; then
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          docker logs tillapp-ci-sql
+          exit 1
+
+      - name: Build server and tests
+        run: dotnet build TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore
+
+      - name: Build shared client and WASM host
+        run: |
+          dotnet build TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore
+          dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore
+
+      - name: Run server integration tests
+        run: dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-build --no-restore
+
+      - name: Run shared client tests
+        run: dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-build --no-restore

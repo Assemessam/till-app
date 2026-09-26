@@ -13,6 +13,7 @@
 # Test and coverage output
 [Tt]est[Rr]esult*/
 coverage/
+**/coverage/
 *.coverage
 *.coveragexml
 
@@ -41,6 +42,12 @@ Thumbs.db
 *.aab
 *.keystore
 *.jks
+
+# Local Docker/database files when developers choose bind mounts
+.docker/
+docker-data/
+*.mdf
+*.ldf
 
 # Logs
 *.log

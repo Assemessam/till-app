@@ -1,9 +1,9 @@
 # Portfolio Roadmap
 
 **Total phases:** 12
-**Current phase:** 12 — GitHub Release (**Current; not started**)
-**Completed:** 1–11
-**Pending:** 12
+**Current phase:** None — all roadmap phases completed
+**Completed:** 1–12
+**Pending:** None
 
 | Phase | Status | Scope |
 | --- | --- | --- |
@@ -18,7 +18,7 @@
 | 9. API Hardening | Completed | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
 | 10. Automated Tests | Completed | Add focused unit/integration coverage for product and order rules. |
 | 11. Developer Experience | Completed | Add useful seed data, setup/configuration cleanup, OpenAPI, and practical Docker guidance. |
-| 12. GitHub Release | Current | Add CI and portfolio-quality README, architecture, setup, API, test, and screenshot guidance. |
+| 12. GitHub Release | Completed | Add CI and portfolio-quality README, architecture, setup, API, test, and screenshot guidance. |
 
 ## Baseline recorded in Phase 1
 
@@ -102,6 +102,34 @@
 
 - Development startup applies pending EF migrations, then seeds only missing Food, Drinks, and Desserts categories and seven sample products. Existing category/product values are never overwritten; startup in Testing/Production does not migrate or seed.
 - Kept the existing SQL Server Compose service, ignored `.env`, connection-string environment-variable conventions, built-in ASP.NET OpenAPI JSON endpoint, and separate `TillAppTests` database. Added `docs/DEVELOPMENT.md` with verified local setup, client startup, migrations, API docs, Android, and safe test-database instructions; no new UI/package dependency or secret was added.
+
+## Phase 12 decisions
+
+- Replaced the assessment-era README with a concise portfolio README: accurate feature/technology summary, Mermaid architecture diagram, project responsibilities, quick start, OpenAPI, test/CI notes, demo flow, and intentional scope limits. Added a screenshot checklist; removed two stale Android captures that showed retired UI rather than misrepresenting the release.
+- Added one GitHub Actions `Build and test` workflow for push/pull requests. It restores/builds Server, shared client, and WASM; generates an ephemeral per-run SQL password; starts an isolated SQL Server container; and runs both test suites. MAUI Android remains a verified local build to keep Linux CI focused and reliable.
+- Audited tracked files, local configuration, Docker/test artifacts, and documentation. `.env` remains ignored, templates contain placeholders only, no local verification credentials were committed, and the preserved `app.css` stash was not applied wholesale because it targets retired grids. Only compatible global presentation refinements were incorporated; the stash remains intact.
+
+## Phase 12 verification
+
+- `docker compose config --quiet` and `docker compose up -d sqlserver` — **passed**; SQL Server was healthy.
+- `dotnet build TillApp.sln --no-restore` — **passed**, including Server, tests, Shared, WASM, and MAUI Android; 0 warnings/errors.
+- `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-build --no-restore` — **41 passed** against the dedicated `TillAppTests` database.
+- `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-build --no-restore` — **24 passed**.
+- `dotnet tool run dotnet-ef migrations has-pending-model-changes ...` — **passed**; no pending model changes.
+- Isolated API/WASM smoke test — **passed**: catalog loaded; a product-ID/quantity order received an authoritative total, was retrieved and paid, and dashboard data updated. OpenAPI, shared client route shells, and configured WASM CORS returned successfully. No local browser surface was available for GUI automation.
+- Workflow YAML parses locally; GitHub Actions has not yet run remotely. `git diff --check` — **passed**.
+- Removed only the disposable local `TillAppPhase11Verification` database after verification.
+
+## Phase 12 limitations
+
+- Authentication/authorization and production deployment configuration are intentionally outside the portfolio scope.
+- MAUI is Android-only; iOS/macOS requires a Mac host and is not included in Linux CI.
+
+## Files changed by Phase 12
+
+- `.github/workflows/ci.yml`, `.gitignore`, `README.md`
+- `docs/DEVELOPMENT.md`, `docs/SCREENSHOTS.md`, `docs/PORTFOLIO_ROADMAP.md`; removed stale `docs/screenshots/*`
+- `TillApp.Client.Shared/wwwroot/app.css`, `Pages/NewOrder.razor`
 
 ## Phase 11 verification
 

@@ -72,7 +72,7 @@ dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android
 dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android -t:Run
 ```
 
-The default API address is `http://10.0.2.2:5080/`, which maps the Android emulator to the development machine. `TILLAPP_API_BASE_URL` overrides it when needed. See the existing Android notes in the root README for emulator setup and network details.
+The default API address is `http://10.0.2.2:5080/`, which maps the Android emulator to the development machine. `TILLAPP_API_BASE_URL` overrides it when needed. Configure Android tooling and an emulator/device before using the run target.
 
 ## Run tests
 
