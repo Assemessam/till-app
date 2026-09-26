@@ -1,9 +1,9 @@
 # Portfolio Roadmap
 
 **Total phases:** 12
-**Current phase:** 6 — POS / New Order UI (**Current; not started**)
-**Completed:** 1–5
-**Pending:** 6–12
+**Current phase:** 7 — Orders & History (**Current; not started**)
+**Completed:** 1–6
+**Pending:** 7–12
 
 | Phase | Status | Scope |
 | --- | --- | --- |
@@ -12,8 +12,8 @@
 | 3. Product Management API | Completed | Add category/product DTOs, business logic, and REST endpoints. |
 | 4. Product Management UI | Completed | Add simple shared category/product management screens. |
 | 5. Order Domain Upgrade | Completed | Add statuses, quantities, product references/snapshots, timestamps, server totals, and order rules. |
-| 6. POS / New Order UI | Current | Load API products by category; support basket quantities, removal/clear, submission, and feedback. |
-| 7. Orders & History | Pending | Add list/detail, status/date/search filters, and pending payment/cancellation actions. |
+| 6. POS / New Order UI | Completed | Load API products by category; support basket quantities, removal/clear, submission, and feedback. |
+| 7. Orders & History | Current | Add list/detail, status/date/search filters, and pending payment/cancellation actions. |
 | 8. Dashboard | Pending | Add small current-day metrics and recent orders. |
 | 9. API Hardening | Pending | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
 | 10. Automated Tests | Pending | Add focused unit/integration coverage for product and order rules. |
@@ -64,6 +64,13 @@
 - Migration `20260926091539_UpgradeOrderDomain` maps old `IsPaid=false` rows to Pending and `true` rows to Paid, retains existing item names/prices as snapshots with quantity one, and leaves legacy item product references null when no reliable product mapping exists.
 - Pending orders may be paid or cancelled. Repeating the same terminal action is idempotent; Paid → Cancelled and Cancelled → Paid return a conflict. Existing static clients may temporarily resolve a uniquely named active catalog product, while server prices remain authoritative; Phase 6 will replace that fallback with product-ID POS selection.
 
+## Phase 6 decisions
+
+- Replaced the static New Order catalogue with one shared POS page that loads categories and active products through the existing API client. Inactive products are filtered out before display.
+- Added a small local form/cart model: repeated product selection increments one line; decrementing at quantity one removes that line; Clear Order preserves the order name; successful submission resets the complete form.
+- The POS submits only product IDs and quantities. Its total is a client preview, while the Phase 5 API remains authoritative for price, availability, snapshots, and final totals. No backend changes were required.
+- Added `pos.css`, loaded by both hosts, for POS-specific presentation. The unrelated `app.css` polish remains in its existing stash.
+
 ## Phase 1 verification
 
 - `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **23 passed** (SQL Server container healthy).
@@ -99,6 +106,14 @@
 - `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **32 passed** against SQL Server, covering order lifecycle, server totals, quantities, snapshots, inactive/missing products, and category/product APIs.
 - `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **13 passed**.
 - `dotnet build TillApp.Server/TillApp.Server.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
+- `git diff --check` — **passed**.
+
+## Phase 6 verification
+
+- `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **14 passed**, including five POS cart/form-state tests.
+- `dotnet build TillApp.Client.Shared/TillApp.Client.Shared.csproj --no-restore` — **passed**, 0 warnings/errors.
 - `dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore` — **passed**, 0 warnings/errors.
 - `dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
 - `git diff --check` — **passed**.
@@ -141,3 +156,11 @@
 - `TillApp.Server/Services/IOrderService.cs`, `OrderService.cs`, `OrderDomainException.cs`, and `Controllers/OrdersController.cs`
 - `TillApp.Server.Tests/OrdersApiTests.cs`, `ProductManagementApiTests.cs`, and `TillApp.Client.Shared.Tests/OrdersApiClientTests.cs`
 - `database/create-database.sql`, `database/ef-migrations.sql`, and `docs/PORTFOLIO_ROADMAP.md`
+
+## Files changed by Phase 6
+
+- `TillApp.Client.Shared/Pages/NewOrder.razor` and `Models/NewOrderFormModel.cs`
+- `TillApp.Client.Shared/wwwroot/pos.css`
+- `TillApp.Client.WASM/wwwroot/index.html` and `TillApp.Client.MAUI/wwwroot/index.html`
+- `TillApp.Client.Shared.Tests/NewOrderFormModelTests.cs`; removed the static catalogue models/tests
+- `docs/PORTFOLIO_ROADMAP.md`
