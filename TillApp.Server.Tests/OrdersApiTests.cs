@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using TillApp.Server.Data;
+using TillApp.Server.Data.Entities;
 using TillApp.Shared.Orders;
 
 namespace TillApp.Server.Tests;
@@ -19,271 +20,255 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
         await dbContext.Database.MigrateAsync();
         await dbContext.OrderItems.ExecuteDeleteAsync();
         await dbContext.Orders.ExecuteDeleteAsync();
+        await dbContext.Products.ExecuteDeleteAsync();
+        await dbContext.Categories.ExecuteDeleteAsync();
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
-    public async Task Create_ValidOrder_ReturnsCreatedWithGeneratedIds()
+    public async Task Create_ValidOrderCreatesPendingOrderWithSnapshotsAndTimestamps()
     {
-        var response = await _client.PostAsJsonAsync("/api/orders", ValidCreateRequest());
+        var burger = await AddProductAsync("Food", "Burger", 5.00m);
+
+        var response = await _client.PostAsJsonAsync("/api/orders", CreateRequest("Lunch", (burger.ProductId, 3)));
+        var order = await response.Content.ReadFromJsonAsync<OrderDto>();
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.NotNull(response.Headers.Location);
-
-        var order = await response.Content.ReadFromJsonAsync<OrderDto>();
         Assert.NotNull(order);
-        Assert.True(order.OrderId > 0);
-        Assert.All(order.Items, item => Assert.True(item.OrderItemId > 0));
-    }
-
-    [Fact]
-    public async Task Create_CalculatesAmountFromItems()
-    {
-        var order = await CreateOrderAsync(ValidCreateRequest());
-
-        Assert.Equal(12.95m, order.Amount);
-    }
-
-    [Fact]
-    public async Task Create_IgnoresClientSuppliedPaymentAndAmountFields()
-    {
-        var response = await _client.PostAsJsonAsync("/api/orders", new
-        {
-            orderName = "Attempted override",
-            amount = 0.01m,
-            isPaid = true,
-            orderId = 999,
-            items = new[]
-            {
-                new { orderItemId = 999, itemName = "Coke", price = 2.20m }
-            }
-        });
-
-        var order = await response.Content.ReadFromJsonAsync<OrderDto>();
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.NotNull(order);
-        Assert.Equal(2.20m, order.Amount);
+        Assert.Equal(OrderStatus.Pending, order.Status);
         Assert.False(order.IsPaid);
-        Assert.NotEqual(999, order.OrderId);
-        Assert.NotEqual(999, order.Items[0].OrderItemId);
+        Assert.NotEqual(default, order.CreatedAt);
+        Assert.Null(order.PaidAt);
+        Assert.Null(order.CancelledAt);
+        Assert.Equal(15.00m, order.Amount);
+        var item = Assert.Single(order.Items);
+        Assert.Equal(burger.ProductId, item.ProductId);
+        Assert.Equal("Burger", item.ProductName);
+        Assert.Equal(5.00m, item.UnitPrice);
+        Assert.Equal(3, item.Quantity);
+        Assert.Equal(15.00m, item.LineTotal);
     }
 
     [Fact]
-    public async Task Create_EmptyItemList_ReturnsValidationProblem()
+    public async Task Create_UsesAuthoritativeProductNamePriceAndServerCalculatedTotal()
     {
-        var response = await _client.PostAsJsonAsync("/api/orders", new
+        var tea = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var request = new CreateOrderRequest
         {
-            orderName = "Empty",
-            items = Array.Empty<object>()
-        });
-
-        await AssertValidationProblemAsync(response, "Items");
-    }
-
-    [Fact]
-    public async Task Create_MissingOrderName_ReturnsValidationProblem()
-    {
-        var response = await _client.PostAsJsonAsync("/api/orders", new
-        {
-            items = new[] { new { itemName = "Coke", price = 2.20m } }
-        });
-
-        await AssertValidationProblemAsync(response, "OrderName");
-    }
-
-    [Fact]
-    public async Task Create_OverlongOrderName_ReturnsValidationProblem()
-    {
-        var request = ValidCreateRequest();
-        request.OrderName = new string('x', 101);
-
-        var response = await _client.PostAsJsonAsync("/api/orders", request);
-
-        await AssertValidationProblemAsync(response, "OrderName");
-    }
-
-    [Fact]
-    public async Task Create_InvalidItemName_ReturnsValidationProblem()
-    {
-        var request = ValidCreateRequest();
-        request.Items![0].ItemName = "   ";
-
-        var response = await _client.PostAsJsonAsync("/api/orders", request);
-
-        await AssertValidationProblemAsync(response, "Items[0].ItemName");
-    }
-
-    [Fact]
-    public async Task Create_OverlongItemName_ReturnsValidationProblem()
-    {
-        var request = ValidCreateRequest();
-        request.Items![0].ItemName = new string('x', 101);
-
-        var response = await _client.PostAsJsonAsync("/api/orders", request);
-
-        await AssertValidationProblemAsync(response, "Items[0].ItemName");
-    }
-
-    [Fact]
-    public async Task Create_NullItem_ReturnsValidationProblem()
-    {
-        var response = await _client.PostAsJsonAsync("/api/orders", new
-        {
-            orderName = "Invalid",
-            items = new object?[] { null }
-        });
-
-        await AssertValidationProblemAsync(response, "Items");
-    }
-
-    [Theory]
-    [InlineData("0")]
-    [InlineData("-1")]
-    [InlineData("0.00001")]
-    [InlineData("922337203685477.5808")]
-    public async Task Create_InvalidPrice_ReturnsValidationProblem(string value)
-    {
-        var request = ValidCreateRequest();
-        request.Items![0].Price = decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
-
-        var response = await _client.PostAsJsonAsync("/api/orders", request);
-
-        await AssertValidationProblemAsync(response, "Items[0].Price");
-    }
-
-    [Fact]
-    public async Task Get_ReturnsPersistedOrderAndItems()
-    {
-        var created = await CreateOrderAsync(ValidCreateRequest());
-
-        var response = await _client.GetAsync($"/api/orders/{created.OrderId}");
-        var retrieved = await response.Content.ReadFromJsonAsync<OrderDto>();
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.NotNull(retrieved);
-        Assert.Equal(created.OrderId, retrieved.OrderId);
-        Assert.Equal(created.OrderName, retrieved.OrderName);
-        Assert.Equal(created.Amount, retrieved.Amount);
-        Assert.Equal(created.IsPaid, retrieved.IsPaid);
-        Assert.Equal(created.Items, retrieved.Items);
-    }
-
-    [Fact]
-    public async Task Get_UnknownOrder_ReturnsNotFound()
-    {
-        var response = await _client.GetAsync("/api/orders/2147483647");
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task GetOrders_UnpaidFilterReturnsOnlyUnpaidOrders()
-    {
-        var unpaid = await CreateOrderAsync(ValidCreateRequest("Unpaid"));
-        var paid = await CreateOrderAsync(ValidCreateRequest("Paid"));
-        await _client.PatchAsync($"/api/orders/{paid.OrderId}/paid", null);
-
-        var orders = await _client.GetFromJsonAsync<List<OrderDto>>("/api/orders?isPaid=false");
-
-        var order = Assert.Single(orders!);
-        Assert.Equal(unpaid.OrderId, order.OrderId);
-        Assert.False(order.IsPaid);
-    }
-
-    [Fact]
-    public async Task GetOrders_PaidOrderDisappearsFromUnpaidResults()
-    {
-        var order = await CreateOrderAsync(ValidCreateRequest());
-
-        var before = await _client.GetFromJsonAsync<List<OrderDto>>("/api/orders?isPaid=false");
-        await _client.PatchAsync($"/api/orders/{order.OrderId}/paid", null);
-        var after = await _client.GetFromJsonAsync<List<OrderDto>>("/api/orders?isPaid=false");
-
-        Assert.Contains(before!, candidate => candidate.OrderId == order.OrderId);
-        Assert.DoesNotContain(after!, candidate => candidate.OrderId == order.OrderId);
-    }
-
-    [Fact]
-    public async Task Update_ReplacesItemsRecalculatesAmountAndPreservesPaymentState()
-    {
-        var created = await CreateOrderAsync(ValidCreateRequest());
-        await _client.PatchAsync($"/api/orders/{created.OrderId}/paid", null);
-        var request = new UpdateOrderRequest
-        {
-            OrderName = "Updated lunch",
+            OrderName = "Price override attempt",
             Items =
             [
-                new CreateOrderItemRequest { ItemName = "Tea", Price = 1.50m },
-                new CreateOrderItemRequest { ItemName = "Cake", Price = 4.25m }
+                new CreateOrderItemRequest
+                {
+                    ProductId = tea.ProductId,
+                    ItemName = "Client supplied name",
+                    Price = 0.01m,
+                    Quantity = 2
+                }
             ]
         };
 
-        var response = await _client.PutAsJsonAsync($"/api/orders/{created.OrderId}", request);
-        var updated = await response.Content.ReadFromJsonAsync<OrderDto>();
+        var order = await CreateOrderAsync(request);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.NotNull(updated);
-        Assert.Equal("Updated lunch", updated.OrderName);
-        Assert.Equal(5.75m, updated.Amount);
-        Assert.True(updated.IsPaid);
-        Assert.Equal(["Tea", "Cake"], updated.Items.Select(item => item.ItemName));
+        Assert.Equal(4.80m, order.Amount);
+        var item = Assert.Single(order.Items);
+        Assert.Equal("Tea", item.ProductName);
+        Assert.Equal(2.40m, item.UnitPrice);
     }
 
     [Fact]
-    public async Task Update_UnknownOrder_ReturnsNotFound()
+    public async Task Create_CombinesRepeatedProductLinesIntoOneQuantity()
     {
-        var response = await _client.PutAsJsonAsync("/api/orders/2147483647", ValidUpdateRequest());
+        var fries = await AddProductAsync("Food", "Fries", 3.25m);
+        var request = CreateRequest("Shared order", (fries.ProductId, 1), (fries.ProductId, 2));
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        var order = await CreateOrderAsync(request);
+
+        var item = Assert.Single(order.Items);
+        Assert.Equal(3, item.Quantity);
+        Assert.Equal(9.75m, order.Amount);
     }
 
     [Fact]
-    public async Task MarkPaid_SetsPaymentFlagAndIsIdempotent()
+    public async Task Create_PreservesProductSnapshotsAfterProductChanges()
     {
-        var created = await CreateOrderAsync(ValidCreateRequest());
+        var product = await AddProductAsync("Food", "Burger", 5.00m);
+        var order = await CreateOrderAsync(CreateRequest("Lunch", (product.ProductId, 1)));
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<TillAppDbContext>();
+            var persistedProduct = await dbContext.Products.SingleAsync(candidate => candidate.ProductId == product.ProductId);
+            persistedProduct.Name = "Classic Burger";
+            persistedProduct.UnitPrice = 6.00m;
+            await dbContext.SaveChangesAsync();
+        }
+
+        var retrieved = await _client.GetFromJsonAsync<OrderDto>($"/api/orders/{order.OrderId}");
+
+        Assert.NotNull(retrieved);
+        var item = Assert.Single(retrieved.Items);
+        Assert.Equal("Burger", item.ProductName);
+        Assert.Equal(5.00m, item.UnitPrice);
+        Assert.Equal(5.00m, retrieved.Amount);
+    }
+
+    [Fact]
+    public async Task Create_AllowsExistingStaticClientRequestWhenProductNameIsUnique()
+    {
+        await AddProductAsync("Drinks", "Tea", 2.40m);
+        var request = new CreateOrderRequest
+        {
+            OrderName = "Legacy client",
+            Items = [new CreateOrderItemRequest { ItemName = "Tea", Price = 99.99m }]
+        };
+
+        var order = await CreateOrderAsync(request);
+
+        Assert.Equal(2.40m, order.Amount);
+        Assert.Equal("Tea", order.Items[0].ProductName);
+    }
+
+    [Fact]
+    public async Task Create_InactiveProductReturnsBadRequestProblem()
+    {
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m, isActive: false);
+
+        var response = await _client.PostAsJsonAsync("/api/orders", CreateRequest("Lunch", (product.ProductId, 1)));
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Create_UnknownProductReturnsBadRequestProblem()
+    {
+        var response = await _client.PostAsJsonAsync("/api/orders", CreateRequest("Lunch", (2147483647, 1)));
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Create_NonPositiveQuantityReturnsValidationProblem(int quantity)
+    {
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+
+        var response = await _client.PostAsJsonAsync("/api/orders", CreateRequest("Lunch", (product.ProductId, quantity)));
+
+        await AssertValidationProblemAsync(response, "Items[0].Quantity");
+    }
+
+    [Fact]
+    public async Task Create_EmptyOrderReturnsValidationProblem()
+    {
+        var response = await _client.PostAsJsonAsync("/api/orders", new CreateOrderRequest
+        {
+            OrderName = "Empty",
+            Items = []
+        });
+
+        await AssertValidationProblemAsync(response, "Items");
+    }
+
+    [Fact]
+    public async Task MarkPaid_TransitionsPendingOrderAndIsIdempotent()
+    {
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var created = await CreateOrderAsync(CreateRequest("Lunch", (product.ProductId, 1)));
 
         var firstResponse = await _client.PatchAsync($"/api/orders/{created.OrderId}/paid", null);
+        var paid = await firstResponse.Content.ReadFromJsonAsync<OrderDto>();
         var secondResponse = await _client.PatchAsync($"/api/orders/{created.OrderId}/paid", null);
-        var order = await secondResponse.Content.ReadFromJsonAsync<OrderDto>();
+        var paidAgain = await secondResponse.Content.ReadFromJsonAsync<OrderDto>();
 
         Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
-        Assert.NotNull(order);
-        Assert.True(order.IsPaid);
+        Assert.Equal(OrderStatus.Paid, paid!.Status);
+        Assert.NotNull(paid.PaidAt);
+        Assert.Equal(paid.PaidAt, paidAgain!.PaidAt);
     }
 
     [Fact]
-    public async Task MarkPaid_UnknownOrder_ReturnsNotFound()
+    public async Task Cancel_TransitionsPendingOrderAndIsIdempotent()
     {
-        var response = await _client.PatchAsync("/api/orders/2147483647/paid", null);
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var created = await CreateOrderAsync(CreateRequest("Lunch", (product.ProductId, 1)));
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        var firstResponse = await _client.PatchAsync($"/api/orders/{created.OrderId}/cancel", null);
+        var cancelled = await firstResponse.Content.ReadFromJsonAsync<OrderDto>();
+        var secondResponse = await _client.PatchAsync($"/api/orders/{created.OrderId}/cancel", null);
+
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        Assert.Equal(OrderStatus.Cancelled, cancelled!.Status);
+        Assert.NotNull(cancelled.CancelledAt);
     }
 
     [Fact]
-    public async Task Delete_RemovesOrderAndCascadeDeletesItems()
+    public async Task Cancel_PaidOrderReturnsConflict()
     {
-        var created = await CreateOrderAsync(ValidCreateRequest());
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var created = await CreateOrderAsync(CreateRequest("Lunch", (product.ProductId, 1)));
+        await _client.PatchAsync($"/api/orders/{created.OrderId}/paid", null);
 
-        var response = await _client.DeleteAsync($"/api/orders/{created.OrderId}");
-        var subsequentGet = await _client.GetAsync($"/api/orders/{created.OrderId}");
+        var response = await _client.PatchAsync($"/api/orders/{created.OrderId}/cancel", null);
 
+        await AssertProblemAsync(response, HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task MarkPaid_CancelledOrderReturnsConflict()
+    {
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var created = await CreateOrderAsync(CreateRequest("Lunch", (product.ProductId, 1)));
+        await _client.PatchAsync($"/api/orders/{created.OrderId}/cancel", null);
+
+        var response = await _client.PatchAsync($"/api/orders/{created.OrderId}/paid", null);
+
+        await AssertProblemAsync(response, HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task GetOrders_SupportsStatusFilterAndLegacyUnpaidFilter()
+    {
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var pending = await CreateOrderAsync(CreateRequest("Pending", (product.ProductId, 1)));
+        var paid = await CreateOrderAsync(CreateRequest("Paid", (product.ProductId, 1)));
+        var cancelled = await CreateOrderAsync(CreateRequest("Cancelled", (product.ProductId, 1)));
+        await _client.PatchAsync($"/api/orders/{paid.OrderId}/paid", null);
+        await _client.PatchAsync($"/api/orders/{cancelled.OrderId}/cancel", null);
+
+        var paidOrders = await _client.GetFromJsonAsync<List<OrderDto>>("/api/orders?status=Paid");
+        var legacyUnpaid = await _client.GetFromJsonAsync<List<OrderDto>>("/api/orders?isPaid=false");
+
+        Assert.Equal(paid.OrderId, Assert.Single(paidOrders!).OrderId);
+        Assert.Equal(pending.OrderId, Assert.Single(legacyUnpaid!).OrderId);
+    }
+
+    private async Task<Product> AddProductAsync(string categoryName, string name, decimal unitPrice, bool isActive = true)
+    {
         await using var scope = factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TillAppDbContext>();
-        var itemCount = await dbContext.OrderItems.CountAsync(item => item.OrderId == created.OrderId);
+        var category = await dbContext.Categories.SingleOrDefaultAsync(candidate => candidate.Name == categoryName);
+        if (category is null)
+        {
+            category = new Category { Name = categoryName };
+            dbContext.Categories.Add(category);
+            await dbContext.SaveChangesAsync();
+        }
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, subsequentGet.StatusCode);
-        Assert.Equal(0, itemCount);
-    }
-
-    [Fact]
-    public async Task Delete_UnknownOrder_ReturnsNotFound()
-    {
-        var response = await _client.DeleteAsync("/api/orders/2147483647");
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        var product = new Product
+        {
+            CategoryId = category.CategoryId,
+            Name = name,
+            UnitPrice = unitPrice,
+            IsActive = isActive
+        };
+        dbContext.Products.Add(product);
+        await dbContext.SaveChangesAsync();
+        return product;
     }
 
     private async Task<OrderDto> CreateOrderAsync(CreateOrderRequest request)
@@ -293,21 +278,12 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
         return (await response.Content.ReadFromJsonAsync<OrderDto>())!;
     }
 
-    private static CreateOrderRequest ValidCreateRequest(string orderName = "Test Lunch") => new()
+    private static CreateOrderRequest CreateRequest(string orderName, params (int ProductId, int Quantity)[] items) => new()
     {
         OrderName = orderName,
-        Items =
-        [
-            new CreateOrderItemRequest { ItemName = "Coke", Price = 2.20m },
-            new CreateOrderItemRequest { ItemName = "Burger", Price = 7.50m },
-            new CreateOrderItemRequest { ItemName = "Fries", Price = 3.25m }
-        ]
-    };
-
-    private static UpdateOrderRequest ValidUpdateRequest() => new()
-    {
-        OrderName = "Updated",
-        Items = [new CreateOrderItemRequest { ItemName = "Tea", Price = 1.50m }]
+        Items = items
+            .Select(item => new CreateOrderItemRequest { ProductId = item.ProductId, Quantity = item.Quantity })
+            .ToList()
     };
 
     private static async Task AssertValidationProblemAsync(HttpResponseMessage response, string errorKey)
@@ -320,5 +296,14 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
         Assert.Contains(errorKey, problem.Errors.Keys, StringComparer.OrdinalIgnoreCase);
     }
 
+    private static async Task AssertProblemAsync(HttpResponseMessage response, HttpStatusCode expectedStatus)
+    {
+        Assert.Equal(expectedStatus, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.NotNull(await response.Content.ReadFromJsonAsync<ProblemResponse>());
+    }
+
     private sealed record ValidationProblemResponse(Dictionary<string, string[]> Errors);
+
+    private sealed record ProblemResponse(string? Title, string? Detail, int? Status);
 }

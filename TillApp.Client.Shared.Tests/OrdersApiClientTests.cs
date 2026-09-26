@@ -51,7 +51,7 @@ public sealed class OrdersApiClientTests
         {
             Assert.Equal(HttpMethod.Patch, request.Method);
             Assert.Equal("/api/orders/42/paid", request.RequestUri?.AbsolutePath);
-            return JsonResponse(SampleOrder() with { IsPaid = true });
+            return JsonResponse(SampleOrder() with { Status = OrderStatus.Paid });
         });
         var client = CreateClient(handler);
 
@@ -106,8 +106,11 @@ public sealed class OrdersApiClientTests
         42,
         "Browser Lunch",
         2.20m,
-        false,
-        [new OrderItemDto(100, "Coke", 2.20m)]);
+        OrderStatus.Pending,
+        DateTime.UtcNow,
+        null,
+        null,
+        [new OrderItemDto(100, 5, "Coke", 2.20m, 1)]);
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
         : HttpMessageHandler

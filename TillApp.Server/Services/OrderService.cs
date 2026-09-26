@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TillApp.Server.Data;
 using TillApp.Server.Data.Entities;
+using TillApp.Shared.Common;
 using TillApp.Shared.Orders;
 
 namespace TillApp.Server.Services;
@@ -10,6 +11,7 @@ public sealed class OrderService(
     ILogger<OrderService> logger) : IOrderService
 {
     public async Task<IReadOnlyList<OrderDto>> GetOrdersAsync(
+        OrderStatus? status,
         bool? isPaid,
         CancellationToken cancellationToken)
     {
@@ -18,13 +20,21 @@ public sealed class OrderService(
             .Include(order => order.Items)
             .AsQueryable();
 
-        if (isPaid.HasValue)
+        var effectiveStatus = status ?? isPaid switch
         {
-            query = query.Where(order => order.IsPaid == isPaid.Value);
+            true => OrderStatus.Paid,
+            false => OrderStatus.Pending,
+            null => null
+        };
+
+        if (effectiveStatus.HasValue)
+        {
+            query = query.Where(order => order.Status == effectiveStatus.Value);
         }
 
         var orders = await query
-            .OrderBy(order => order.OrderId)
+            .OrderByDescending(order => order.CreatedAt)
+            .ThenByDescending(order => order.OrderId)
             .ToListAsync(cancellationToken);
 
         return orders.Select(ToDto).ToList();
@@ -49,19 +59,21 @@ public sealed class OrderService(
         CreateOrderRequest request,
         CancellationToken cancellationToken)
     {
+        var items = await CreateItemsAsync(request.Items!, cancellationToken);
         var order = new Order
         {
             OrderName = request.OrderName,
-            Amount = CalculateAmount(request.Items!),
-            IsPaid = false,
-            Items = CreateItems(request.Items!)
+            Amount = CalculateAmount(items),
+            Status = OrderStatus.Pending,
+            CreatedAt = DateTime.UtcNow,
+            Items = items
         };
 
         dbContext.Orders.Add(order);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "Created order {OrderId} with {ItemCount} items and amount {Amount}",
+            "Created pending order {OrderId} with {ItemCount} lines and total {Amount}",
             order.OrderId,
             order.Items.Count,
             order.Amount);
@@ -84,16 +96,18 @@ public sealed class OrderService(
             return null;
         }
 
-        order.OrderName = request.OrderName;
-        order.Amount = CalculateAmount(request.Items!);
+        EnsurePending(order, "updated");
+        var items = await CreateItemsAsync(request.Items!, cancellationToken);
 
+        order.OrderName = request.OrderName;
+        order.Amount = CalculateAmount(items);
         dbContext.OrderItems.RemoveRange(order.Items);
-        order.Items = CreateItems(request.Items!);
+        order.Items = items;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation(
-            "Updated order {OrderId} with {ItemCount} replacement items and amount {Amount}",
+            "Updated pending order {OrderId} with {ItemCount} lines and total {Amount}",
             order.OrderId,
             order.Items.Count,
             order.Amount);
@@ -103,25 +117,51 @@ public sealed class OrderService(
 
     public async Task<OrderDto?> MarkOrderPaidAsync(int orderId, CancellationToken cancellationToken)
     {
-        var order = await dbContext.Orders
-            .Include(candidate => candidate.Items)
-            .SingleOrDefaultAsync(candidate => candidate.OrderId == orderId, cancellationToken);
-
+        var order = await FindOrderAsync(orderId, cancellationToken);
         if (order is null)
         {
-            logger.LogWarning("Could not mark order {OrderId} paid because it does not exist", orderId);
             return null;
         }
 
-        if (!order.IsPaid)
+        if (order.Status == OrderStatus.Cancelled)
         {
-            order.IsPaid = true;
+            throw new OrderDomainException(
+                OrderDomainError.InvalidTransition,
+                "Cancelled orders cannot be marked paid.");
+        }
+
+        if (order.Status == OrderStatus.Pending)
+        {
+            order.Status = OrderStatus.Paid;
+            order.PaidAt = DateTime.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
             logger.LogInformation("Marked order {OrderId} as paid", orderId);
         }
-        else
+
+        return ToDto(order);
+    }
+
+    public async Task<OrderDto?> CancelOrderAsync(int orderId, CancellationToken cancellationToken)
+    {
+        var order = await FindOrderAsync(orderId, cancellationToken);
+        if (order is null)
         {
-            logger.LogDebug("Order {OrderId} was already paid", orderId);
+            return null;
+        }
+
+        if (order.Status == OrderStatus.Paid)
+        {
+            throw new OrderDomainException(
+                OrderDomainError.InvalidTransition,
+                "Paid orders cannot be cancelled.");
+        }
+
+        if (order.Status == OrderStatus.Pending)
+        {
+            order.Status = OrderStatus.Cancelled;
+            order.CancelledAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Cancelled order {OrderId}", orderId);
         }
 
         return ToDto(order);
@@ -138,31 +178,143 @@ public sealed class OrderService(
             return false;
         }
 
+        EnsurePending(order, "deleted");
         dbContext.Orders.Remove(order);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation("Deleted order {OrderId}", orderId);
+        logger.LogInformation("Deleted pending order {OrderId}", orderId);
         return true;
     }
 
-    private static decimal CalculateAmount(IEnumerable<CreateOrderItemRequest> items) =>
-        items.Sum(item => item.Price);
+    private async Task<Order?> FindOrderAsync(int orderId, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.Orders
+            .Include(candidate => candidate.Items)
+            .SingleOrDefaultAsync(candidate => candidate.OrderId == orderId, cancellationToken);
 
-    private static List<OrderItem> CreateItems(IEnumerable<CreateOrderItemRequest> items) =>
-        items.Select(item => new OrderItem
+        if (order is null)
         {
-            ItemName = item.ItemName,
-            Price = item.Price
-        }).ToList();
+            logger.LogWarning("Order {OrderId} was not found", orderId);
+        }
+
+        return order;
+    }
+
+    private async Task<List<OrderItem>> CreateItemsAsync(
+        IEnumerable<CreateOrderItemRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        var resolvedItems = new List<(Product Product, int Quantity)>();
+
+        foreach (var request in requests)
+        {
+            var product = await ResolveProductAsync(request, cancellationToken);
+            resolvedItems.Add((product, request.Quantity));
+        }
+
+        var items = resolvedItems
+            .GroupBy(item => item.Product.ProductId)
+            .Select(group =>
+            {
+                var product = group.First().Product;
+                var quantity = group.Sum(item => (long)item.Quantity);
+                if (quantity > int.MaxValue)
+                {
+                    throw new OrderDomainException(
+                        OrderDomainError.ProductNotFound,
+                        "The requested quantity is too large.");
+                }
+
+                return new OrderItem
+                {
+                    ProductId = product.ProductId,
+                    ProductName = product.Name,
+                    UnitPrice = product.UnitPrice,
+                    Quantity = (int)quantity
+                };
+            })
+            .ToList();
+
+        return items;
+    }
+
+    private async Task<Product> ResolveProductAsync(
+        CreateOrderItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        Product? product;
+
+        if (request.ProductId > 0)
+        {
+            product = await dbContext.Products
+                .SingleOrDefaultAsync(candidate => candidate.ProductId == request.ProductId, cancellationToken);
+        }
+        else
+        {
+            var matches = await dbContext.Products
+                .Where(candidate => candidate.Name == request.ItemName)
+                .Take(2)
+                .ToListAsync(cancellationToken);
+
+            product = matches.Count == 1 ? matches[0] : null;
+        }
+
+        if (product is null)
+        {
+            throw new OrderDomainException(
+                OrderDomainError.ProductNotFound,
+                "One or more selected products could not be found.");
+        }
+
+        if (!product.IsActive)
+        {
+            throw new OrderDomainException(
+                OrderDomainError.ProductInactive,
+                $"{product.Name} is inactive and cannot be added to a new order.");
+        }
+
+        return product;
+    }
+
+    private static decimal CalculateAmount(IEnumerable<OrderItem> items)
+    {
+        var total = items.Sum(item => item.UnitPrice * item.Quantity);
+        if (total > SqlMoney.MaxValue)
+        {
+            throw new OrderDomainException(
+                OrderDomainError.ProductNotFound,
+                "The order total exceeds the SQL Server money range.");
+        }
+
+        return total;
+    }
+
+    private static void EnsurePending(Order order, string action)
+    {
+        if (order.Status != OrderStatus.Pending)
+        {
+            throw new OrderDomainException(
+                OrderDomainError.OrderNotPending,
+                $"Only pending orders can be {action}.");
+        }
+    }
 
     private static OrderDto ToDto(Order order) =>
         new(
             order.OrderId,
             order.OrderName,
             order.Amount,
-            order.IsPaid,
+            order.Status,
+            order.CreatedAt,
+            order.PaidAt,
+            order.CancelledAt,
             order.Items
                 .OrderBy(item => item.OrderItemId)
-                .Select(item => new OrderItemDto(item.OrderItemId, item.ItemName, item.Price))
+                .Select(item => new OrderItemDto(
+                    item.OrderItemId,
+                    item.ProductId,
+                    item.ProductName,
+                    item.UnitPrice,
+                    item.Quantity))
                 .ToList());
 }

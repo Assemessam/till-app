@@ -17,6 +17,8 @@ public sealed class ProductManagementApiTests(OrderApiFactory factory) : IAsyncL
         await using var scope = factory.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TillAppDbContext>();
         await dbContext.Database.MigrateAsync();
+        await dbContext.OrderItems.ExecuteDeleteAsync();
+        await dbContext.Orders.ExecuteDeleteAsync();
         await dbContext.Products.ExecuteDeleteAsync();
         await dbContext.Categories.ExecuteDeleteAsync();
     }

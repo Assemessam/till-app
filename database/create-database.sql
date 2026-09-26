@@ -54,14 +54,19 @@ BEGIN
         [OrderID] int IDENTITY(1, 1) NOT NULL,
         [OrderName] nvarchar(100) NOT NULL,
         [Amount] money NOT NULL,
-        [IsPaid] bit NOT NULL
-            CONSTRAINT [DF_Orders_IsPaid] DEFAULT (CONVERT(bit, 0)),
+        [Status] tinyint NOT NULL
+            CONSTRAINT [DF_Orders_Status] DEFAULT (CONVERT(tinyint, 0)),
+        [CreatedAt] datetime2 NOT NULL
+            CONSTRAINT [DF_Orders_CreatedAt] DEFAULT (SYSUTCDATETIME()),
+        [PaidAt] datetime2 NULL,
+        [CancelledAt] datetime2 NULL,
         CONSTRAINT [PK_Orders] PRIMARY KEY ([OrderID]),
         CONSTRAINT [CK_Orders_Amount]
-            CHECK ([Amount] >= 0 AND [Amount] <= 922337203685477.5807)
+            CHECK ([Amount] >= 0 AND [Amount] <= 922337203685477.5807),
+        CONSTRAINT [CK_Orders_Status] CHECK ([Status] IN (0, 1, 2))
     );
 
-    CREATE INDEX [IX_Orders_IsPaid] ON [dbo].[Orders] ([IsPaid]);
+    CREATE INDEX [IX_Orders_Status_CreatedAt] ON [dbo].[Orders] ([Status], [CreatedAt]);
 END;
 GO
 
@@ -71,15 +76,21 @@ BEGIN
     (
         [OrderItemID] int IDENTITY(1, 1) NOT NULL,
         [OrderID] int NOT NULL,
-        [ItemName] nvarchar(100) NOT NULL,
-        [Price] money NOT NULL,
+        [ProductID] int NULL,
+        [ProductName] nvarchar(100) NOT NULL,
+        [UnitPrice] money NOT NULL,
+        [Quantity] int NOT NULL,
         CONSTRAINT [PK_OrderItems] PRIMARY KEY ([OrderItemID]),
-        CONSTRAINT [CK_OrderItems_Price]
-            CHECK ([Price] >= 0.0001 AND [Price] <= 922337203685477.5807),
+        CONSTRAINT [CK_OrderItems_UnitPrice]
+            CHECK ([UnitPrice] >= 0.0001 AND [UnitPrice] <= 922337203685477.5807),
+        CONSTRAINT [CK_OrderItems_Quantity] CHECK ([Quantity] > 0),
         CONSTRAINT [FK_OrderItems_Orders_OrderID]
-            FOREIGN KEY ([OrderID]) REFERENCES [dbo].[Orders] ([OrderID]) ON DELETE CASCADE
+            FOREIGN KEY ([OrderID]) REFERENCES [dbo].[Orders] ([OrderID]) ON DELETE CASCADE,
+        CONSTRAINT [FK_OrderItems_Products_ProductID]
+            FOREIGN KEY ([ProductID]) REFERENCES [dbo].[Products] ([ProductID])
     );
 
     CREATE INDEX [IX_OrderItems_OrderID] ON [dbo].[OrderItems] ([OrderID]);
+    CREATE INDEX [IX_OrderItems_ProductID] ON [dbo].[OrderItems] ([ProductID]);
 END;
 GO

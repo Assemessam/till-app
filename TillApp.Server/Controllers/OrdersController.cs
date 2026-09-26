@@ -11,10 +11,11 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<OrderDto>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<OrderDto>>> GetOrders(
+        [FromQuery] OrderStatus? status,
         [FromQuery] bool? isPaid,
         CancellationToken cancellationToken)
     {
-        var orders = await orderService.GetOrdersAsync(isPaid, cancellationToken);
+        var orders = await orderService.GetOrdersAsync(status, isPaid, cancellationToken);
         return Ok(orders);
     }
 
@@ -34,8 +35,15 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
         CreateOrderRequest request,
         CancellationToken cancellationToken)
     {
-        var order = await orderService.CreateOrderAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetOrder), new { id = order.OrderId }, order);
+        try
+        {
+            var order = await orderService.CreateOrderAsync(request, cancellationToken);
+            return CreatedAtAction(nameof(GetOrder), new { id = order.OrderId }, order);
+        }
+        catch (OrderDomainException exception)
+        {
+            return OrderProblem(exception);
+        }
     }
 
     [HttpPut("{id:int}")]
@@ -47,8 +55,15 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
         UpdateOrderRequest request,
         CancellationToken cancellationToken)
     {
-        var order = await orderService.UpdateOrderAsync(id, request, cancellationToken);
-        return order is null ? NotFound() : Ok(order);
+        try
+        {
+            var order = await orderService.UpdateOrderAsync(id, request, cancellationToken);
+            return order is null ? NotFound() : Ok(order);
+        }
+        catch (OrderDomainException exception)
+        {
+            return OrderProblem(exception);
+        }
     }
 
     [HttpPatch("{id:int}/paid")]
@@ -56,8 +71,32 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<OrderDto>> MarkOrderPaid(int id, CancellationToken cancellationToken)
     {
-        var order = await orderService.MarkOrderPaidAsync(id, cancellationToken);
-        return order is null ? NotFound() : Ok(order);
+        try
+        {
+            var order = await orderService.MarkOrderPaidAsync(id, cancellationToken);
+            return order is null ? NotFound() : Ok(order);
+        }
+        catch (OrderDomainException exception)
+        {
+            return OrderProblem(exception);
+        }
+    }
+
+    [HttpPatch("{id:int}/cancel")]
+    [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OrderDto>> CancelOrder(int id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var order = await orderService.CancelOrderAsync(id, cancellationToken);
+            return order is null ? NotFound() : Ok(order);
+        }
+        catch (OrderDomainException exception)
+        {
+            return OrderProblem(exception);
+        }
     }
 
     [HttpDelete("{id:int}")]
@@ -65,7 +104,29 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteOrder(int id, CancellationToken cancellationToken)
     {
-        var deleted = await orderService.DeleteOrderAsync(id, cancellationToken);
-        return deleted ? NoContent() : NotFound();
+        try
+        {
+            var deleted = await orderService.DeleteOrderAsync(id, cancellationToken);
+            return deleted ? NoContent() : NotFound();
+        }
+        catch (OrderDomainException exception)
+        {
+            return OrderProblem(exception);
+        }
     }
+
+    private ObjectResult OrderProblem(OrderDomainException exception) =>
+        exception.Error is OrderDomainError.InvalidTransition or OrderDomainError.OrderNotPending
+            ? Conflict(new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Invalid order status transition",
+                Detail = exception.Message
+            })
+            : BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Order cannot be created or updated",
+                Detail = exception.Message
+            });
 }

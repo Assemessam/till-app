@@ -1,9 +1,9 @@
 # Portfolio Roadmap
 
 **Total phases:** 12
-**Current phase:** 5 — Order Domain Upgrade (**Current; not started**)
-**Completed:** 1–4
-**Pending:** 5–12
+**Current phase:** 6 — POS / New Order UI (**Current; not started**)
+**Completed:** 1–5
+**Pending:** 6–12
 
 | Phase | Status | Scope |
 | --- | --- | --- |
@@ -11,8 +11,8 @@
 | 2. Domain & Database | Completed | Add categories/products and evolve the order schema only as needed. |
 | 3. Product Management API | Completed | Add category/product DTOs, business logic, and REST endpoints. |
 | 4. Product Management UI | Completed | Add simple shared category/product management screens. |
-| 5. Order Domain Upgrade | Current | Add statuses, quantities, product references/snapshots, timestamps, server totals, and order rules. |
-| 6. POS / New Order UI | Pending | Load API products by category; support basket quantities, removal/clear, submission, and feedback. |
+| 5. Order Domain Upgrade | Completed | Add statuses, quantities, product references/snapshots, timestamps, server totals, and order rules. |
+| 6. POS / New Order UI | Current | Load API products by category; support basket quantities, removal/clear, submission, and feedback. |
 | 7. Orders & History | Pending | Add list/detail, status/date/search filters, and pending payment/cancellation actions. |
 | 8. Dashboard | Pending | Add small current-day metrics and recent orders. |
 | 9. API Hardening | Pending | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
@@ -57,6 +57,13 @@
 - Added a shared catalog stylesheet loaded by both hosts. The existing New Order static catalogue remains in place until Phase 6.
 - Phase 3 checkpoint commit: `9181cce` (`Phase 3 - complete product management API`) on the original branch. Phase 4 is committed separately on `feature/phase-4-product-management-ui`.
 
+## Phase 5 decisions
+
+- Replaced stored `IsPaid` with `OrderStatus` (`Pending`, `Paid`, `Cancelled`), `CreatedAt`, `PaidAt`, and `CancelledAt`. `OrderDto.IsPaid` remains a derived compatibility property, not stored state.
+- New order lines contain a product reference, product-name/unit-price snapshots, and quantity. Totals are calculated from active catalog products on the server, and repeated product requests are combined into one line.
+- Migration `20260926091539_UpgradeOrderDomain` maps old `IsPaid=false` rows to Pending and `true` rows to Paid, retains existing item names/prices as snapshots with quantity one, and leaves legacy item product references null when no reliable product mapping exists.
+- Pending orders may be paid or cancelled. Repeating the same terminal action is idempotent; Paid → Cancelled and Cancelled → Paid return a conflict. Existing static clients may temporarily resolve a uniquely named active catalog product, while server prices remain authoritative; Phase 6 will replace that fallback with product-ID POS selection.
+
 ## Phase 1 verification
 
 - `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **23 passed** (SQL Server container healthy).
@@ -82,6 +89,16 @@
 
 - `dotnet build TillApp.Client.Shared/TillApp.Client.Shared.csproj --no-restore` — **passed**, 0 warnings/errors.
 - `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **13 passed**, including 4 catalog API client tests.
+- `dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
+- `git diff --check` — **passed**.
+
+## Phase 5 verification
+
+- `dotnet tool run dotnet-ef migrations has-pending-model-changes ...` — **passed**; no pending model changes.
+- `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **32 passed** against SQL Server, covering order lifecycle, server totals, quantities, snapshots, inactive/missing products, and category/product APIs.
+- `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **13 passed**.
+- `dotnet build TillApp.Server/TillApp.Server.csproj --no-restore` — **passed**, 0 warnings/errors.
 - `dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore` — **passed**, 0 warnings/errors.
 - `dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
 - `git diff --check` — **passed**.
@@ -115,3 +132,12 @@
 - `TillApp.Client.WASM/wwwroot/index.html`, `TillApp.Client.MAUI/wwwroot/index.html`
 - `TillApp.Client.Shared.Tests/CatalogApiClientTests.cs`
 - `docs/PORTFOLIO_ROADMAP.md`
+
+## Files changed by Phase 5
+
+- `TillApp.Shared/Orders/*.cs`
+- `TillApp.Server/Data/Entities/Order.cs`, `OrderItem.cs`, and `Data/Configurations/Order*.cs`
+- `TillApp.Server/Data/Migrations/20260926091539_UpgradeOrderDomain.*` and `TillAppDbContextModelSnapshot.cs`
+- `TillApp.Server/Services/IOrderService.cs`, `OrderService.cs`, `OrderDomainException.cs`, and `Controllers/OrdersController.cs`
+- `TillApp.Server.Tests/OrdersApiTests.cs`, `ProductManagementApiTests.cs`, and `TillApp.Client.Shared.Tests/OrdersApiClientTests.cs`
+- `database/create-database.sql`, `database/ef-migrations.sql`, and `docs/PORTFOLIO_ROADMAP.md`
