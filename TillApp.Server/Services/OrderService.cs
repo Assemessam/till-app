@@ -13,6 +13,9 @@ public sealed class OrderService(
     public async Task<IReadOnlyList<OrderDto>> GetOrdersAsync(
         OrderStatus? status,
         bool? isPaid,
+        string? search,
+        DateOnly? from,
+        DateOnly? to,
         CancellationToken cancellationToken)
     {
         var query = dbContext.Orders
@@ -30,6 +33,33 @@ public sealed class OrderService(
         if (effectiveStatus.HasValue)
         {
             query = query.Where(order => order.Status == effectiveStatus.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            if (int.TryParse(term, out var orderId))
+            {
+                query = query.Where(order => order.OrderId == orderId || order.OrderName.Contains(term));
+            }
+            else
+            {
+                query = query.Where(order => order.OrderName.Contains(term));
+            }
+        }
+
+        if (from.HasValue)
+        {
+            var fromUtc = DateTime.SpecifyKind(from.Value.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+            query = query.Where(order => order.CreatedAt >= fromUtc);
+        }
+
+        if (to.HasValue && to.Value != DateOnly.MaxValue)
+        {
+            var toExclusive = DateTime.SpecifyKind(
+                to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue),
+                DateTimeKind.Utc);
+            query = query.Where(order => order.CreatedAt < toExclusive);
         }
 
         var orders = await query

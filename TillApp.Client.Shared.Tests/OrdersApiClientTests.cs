@@ -8,12 +8,12 @@ namespace TillApp.Client.Shared.Tests;
 public sealed class OrdersApiClientTests
 {
     [Fact]
-    public async Task GetUnpaidOrders_UsesServerSidePaymentFilter()
+    public async Task GetUnpaidOrders_UsesServerSidePendingFilter()
     {
         var handler = new StubHttpMessageHandler(request =>
         {
             Assert.Equal(HttpMethod.Get, request.Method);
-            Assert.Equal("/api/orders?isPaid=false", request.RequestUri?.PathAndQuery);
+            Assert.Equal("/api/orders?status=Pending", request.RequestUri?.PathAndQuery);
             return JsonResponse(new[] { SampleOrder() });
         });
 
@@ -22,6 +22,65 @@ public sealed class OrdersApiClientTests
 
         Assert.Single(orders);
         Assert.False(orders[0].IsPaid);
+    }
+
+    [Fact]
+    public async Task GetOrders_SendsCombinedStatusSearchAndInclusiveDateFilters()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal(
+                "/api/orders?status=Paid&search=Table%204%2F%231&from=2026-09-01&to=2026-09-30",
+                request.RequestUri?.PathAndQuery);
+            return JsonResponse(Array.Empty<OrderDto>());
+        });
+        var client = CreateClient(handler);
+
+        var orders = await client.GetOrdersAsync(
+            OrderStatus.Paid,
+            " Table 4/#1 ",
+            new DateOnly(2026, 9, 1),
+            new DateOnly(2026, 9, 30));
+
+        Assert.Empty(orders);
+    }
+
+    [Fact]
+    public async Task GetOrder_UsesDetailsEndpoint()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("/api/orders/42", request.RequestUri?.AbsolutePath);
+            return JsonResponse(SampleOrder());
+        });
+        var client = CreateClient(handler);
+
+        var order = await client.GetOrderAsync(42);
+
+        Assert.Equal(42, order.OrderId);
+        var item = Assert.Single(order.Items);
+        Assert.Equal("Coke", item.ProductName);
+        Assert.Equal(2.20m, item.UnitPrice);
+        Assert.Equal(1, item.Quantity);
+        Assert.Equal(2.20m, item.LineTotal);
+    }
+
+    [Fact]
+    public async Task CancelOrder_UsesPendingCancellationTransitionEndpoint()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Patch, request.Method);
+            Assert.Equal("/api/orders/42/cancel", request.RequestUri?.AbsolutePath);
+            return JsonResponse(SampleOrder() with { Status = OrderStatus.Cancelled });
+        });
+        var client = CreateClient(handler);
+
+        var order = await client.CancelOrderAsync(42);
+
+        Assert.Equal(OrderStatus.Cancelled, order.Status);
     }
 
     [Fact]

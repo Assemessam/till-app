@@ -7,6 +7,9 @@ public interface IOrderService
     Task<IReadOnlyList<OrderDto>> GetOrdersAsync(
         OrderStatus? status,
         bool? isPaid,
+        string? search,
+        DateOnly? from,
+        DateOnly? to,
         CancellationToken cancellationToken);
 
     Task<OrderDto?> GetOrderAsync(int orderId, CancellationToken cancellationToken);

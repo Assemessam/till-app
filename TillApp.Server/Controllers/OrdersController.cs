@@ -13,9 +13,12 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
     public async Task<ActionResult<IReadOnlyList<OrderDto>>> GetOrders(
         [FromQuery] OrderStatus? status,
         [FromQuery] bool? isPaid,
+        [FromQuery] string? search,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
         CancellationToken cancellationToken)
     {
-        var orders = await orderService.GetOrdersAsync(status, isPaid, cancellationToken);
+        var orders = await orderService.GetOrdersAsync(status, isPaid, search, from, to, cancellationToken);
         return Ok(orders);
     }
 

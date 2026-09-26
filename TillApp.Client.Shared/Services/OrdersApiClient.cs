@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Text.Json;
 using TillApp.Shared.Orders;
 using TillApp.Shared.Catalog;
@@ -119,11 +120,52 @@ public sealed class OrdersApiClient(HttpClient httpClient) : IOrdersApiClient
     public async Task<IReadOnlyList<OrderDto>> GetUnpaidOrdersAsync(
         CancellationToken cancellationToken = default)
     {
+        return await GetOrdersAsync(OrderStatus.Pending, cancellationToken: cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<OrderDto>> GetOrdersAsync(
+        OrderStatus? status = null,
+        string? search = null,
+        DateOnly? from = null,
+        DateOnly? to = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>();
+        if (status.HasValue)
+        {
+            query.Add($"status={status.Value}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query.Add($"search={Uri.EscapeDataString(search.Trim())}");
+        }
+
+        if (from.HasValue)
+        {
+            query.Add($"from={from.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
+        }
+
+        if (to.HasValue)
+        {
+            query.Add($"to={to.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
+        }
+
+        var path = "api/orders" + (query.Count > 0 ? $"?{string.Join('&', query)}" : string.Empty);
         using var response = await SendAsync(
-            () => httpClient.GetAsync("api/orders?isPaid=false", cancellationToken),
+            () => httpClient.GetAsync(path, cancellationToken),
             cancellationToken);
 
         return await ReadRequiredAsync<List<OrderDto>>(response, cancellationToken);
+    }
+
+    public async Task<OrderDto> GetOrderAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            () => httpClient.GetAsync($"api/orders/{orderId}", cancellationToken),
+            cancellationToken);
+
+        return await ReadRequiredAsync<OrderDto>(response, cancellationToken);
     }
 
     public async Task<OrderDto> MarkOrderPaidAsync(
@@ -131,6 +173,16 @@ public sealed class OrdersApiClient(HttpClient httpClient) : IOrdersApiClient
         CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/orders/{orderId}/paid");
+        using var response = await SendAsync(
+            () => httpClient.SendAsync(request, cancellationToken),
+            cancellationToken);
+
+        return await ReadRequiredAsync<OrderDto>(response, cancellationToken);
+    }
+
+    public async Task<OrderDto> CancelOrderAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/orders/{orderId}/cancel");
         using var response = await SendAsync(
             () => httpClient.SendAsync(request, cancellationToken),
             cancellationToken);

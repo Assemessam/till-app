@@ -247,6 +247,44 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
         Assert.Equal(pending.OrderId, Assert.Single(legacyUnpaid!).OrderId);
     }
 
+    [Fact]
+    public async Task GetOrders_CombinesStatusSearchAndInclusiveUtcDateRange()
+    {
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var matching = await CreateOrderAsync(CreateRequest("Table 4", (product.ProductId, 1)));
+        var wrongStatus = await CreateOrderAsync(CreateRequest("Table 5", (product.ProductId, 1)));
+        var wrongName = await CreateOrderAsync(CreateRequest("Takeaway", (product.ProductId, 1)));
+        await _client.PatchAsync($"/api/orders/{matching.OrderId}/paid", null);
+        await _client.PatchAsync($"/api/orders/{wrongStatus.OrderId}/cancel", null);
+        await SetCreatedAtAsync(matching.OrderId, new DateTime(2026, 9, 15, 12, 30, 0, DateTimeKind.Utc));
+        await SetCreatedAtAsync(wrongStatus.OrderId, new DateTime(2026, 9, 15, 12, 30, 0, DateTimeKind.Utc));
+        await SetCreatedAtAsync(wrongName.OrderId, new DateTime(2026, 9, 15, 12, 30, 0, DateTimeKind.Utc));
+
+        var orders = await _client.GetFromJsonAsync<List<OrderDto>>(
+            "/api/orders?status=Paid&search=Table&from=2026-09-15&to=2026-09-15");
+
+        Assert.Equal(matching.OrderId, Assert.Single(orders!).OrderId);
+    }
+
+    [Fact]
+    public async Task GetOrders_SearchMatchesOrderNumber()
+    {
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var expected = await CreateOrderAsync(CreateRequest("Lunch", (product.ProductId, 1)));
+
+        var orders = await _client.GetFromJsonAsync<List<OrderDto>>($"/api/orders?search={expected.OrderId}");
+
+        Assert.Equal(expected.OrderId, Assert.Single(orders!).OrderId);
+    }
+
+    [Fact]
+    public async Task GetOrder_UnknownIdReturnsNotFound()
+    {
+        var response = await _client.GetAsync("/api/orders/2147483647");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     private async Task<Product> AddProductAsync(string categoryName, string name, decimal unitPrice, bool isActive = true)
     {
         await using var scope = factory.Services.CreateAsyncScope();
@@ -276,6 +314,15 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/api/orders", request);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<OrderDto>())!;
+    }
+
+    private async Task SetCreatedAtAsync(int orderId, DateTime createdAt)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TillAppDbContext>();
+        var order = await dbContext.Orders.SingleAsync(candidate => candidate.OrderId == orderId);
+        order.CreatedAt = createdAt;
+        await dbContext.SaveChangesAsync();
     }
 
     private static CreateOrderRequest CreateRequest(string orderName, params (int ProductId, int Quantity)[] items) => new()

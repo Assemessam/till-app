@@ -1,9 +1,9 @@
 # Portfolio Roadmap
 
 **Total phases:** 12
-**Current phase:** 7 — Orders & History (**Current; not started**)
-**Completed:** 1–6
-**Pending:** 7–12
+**Current phase:** 8 — Dashboard (**Current; not started**)
+**Completed:** 1–7
+**Pending:** 8–12
 
 | Phase | Status | Scope |
 | --- | --- | --- |
@@ -13,8 +13,8 @@
 | 4. Product Management UI | Completed | Add simple shared category/product management screens. |
 | 5. Order Domain Upgrade | Completed | Add statuses, quantities, product references/snapshots, timestamps, server totals, and order rules. |
 | 6. POS / New Order UI | Completed | Load API products by category; support basket quantities, removal/clear, submission, and feedback. |
-| 7. Orders & History | Current | Add list/detail, status/date/search filters, and pending payment/cancellation actions. |
-| 8. Dashboard | Pending | Add small current-day metrics and recent orders. |
+| 7. Orders & History | Completed | Add list/detail, status/date/search filters, and pending payment/cancellation actions. |
+| 8. Dashboard | Current | Add small current-day metrics and recent orders. |
 | 9. API Hardening | Pending | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
 | 10. Automated Tests | Pending | Add focused unit/integration coverage for product and order rules. |
 | 11. Developer Experience | Pending | Add useful seed data, setup/configuration cleanup, OpenAPI, and practical Docker guidance. |
@@ -71,6 +71,13 @@
 - The POS submits only product IDs and quantities. Its total is a client preview, while the Phase 5 API remains authoritative for price, availability, snapshots, and final totals. No backend changes were required.
 - Added `pos.css`, loaded by both hosts, for POS-specific presentation. The unrelated `app.css` polish remains in its existing stash.
 
+## Phase 7 decisions
+
+- Replaced the unpaid-only shared Orders page with status, name/order-number, and date filters; filtering is combined in the existing orders endpoint and results remain newest-first.
+- Date bounds use UTC calendar dates: `from` is inclusive at midnight and `to` is inclusive through the day by querying before the following midnight. No pagination or reporting was added.
+- Added a shared order detail route. Details use Phase 5 product-name/unit-price snapshots; Pending orders offer Pay and confirmed Cancel actions, and successful transitions update or remove the row to match active filters.
+- Added only the required query parameters and client calls (`status`, `search`, `from`, `to`, detail, cancel). No schema changes or Phase 8 dashboard work.
+
 ## Phase 1 verification
 
 - `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **23 passed** (SQL Server container healthy).
@@ -116,6 +123,16 @@
 - `dotnet build TillApp.Client.Shared/TillApp.Client.Shared.csproj --no-restore` — **passed**, 0 warnings/errors.
 - `dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore` — **passed**, 0 warnings/errors.
 - `dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
+- `git diff --check` — **passed**.
+
+## Phase 7 verification
+
+- `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **17 passed**, including combined filter query encoding, order detail snapshot values, and cancellation endpoint coverage.
+- `dotnet build TillApp.Client.Shared/TillApp.Client.Shared.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Server/TillApp.Server.csproj --no-restore` and `dotnet build TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **passed**, 0 warnings/errors.
+- SQL-backed order query integration tests were added but **not run** because `TILLAPP_TEST_CONNECTION_STRING` is not configured in this environment.
 - `git diff --check` — **passed**.
 
 ## Files changed by Phase 1
@@ -164,3 +181,11 @@
 - `TillApp.Client.WASM/wwwroot/index.html` and `TillApp.Client.MAUI/wwwroot/index.html`
 - `TillApp.Client.Shared.Tests/NewOrderFormModelTests.cs`; removed the static catalogue models/tests
 - `docs/PORTFOLIO_ROADMAP.md`
+
+## Files changed by Phase 7
+
+- `TillApp.Client.Shared/Pages/OrderList.razor`, `OrderDetails.razor`, and `Home.razor`
+- `TillApp.Client.Shared/Services/IOrdersApiClient.cs`, `OrdersApiClient.cs`, and `wwwroot/order-history.css`
+- `TillApp.Server/Controllers/OrdersController.cs`, `Services/IOrderService.cs`, and `Services/OrderService.cs`
+- `TillApp.Server.Tests/OrdersApiTests.cs`, `TillApp.Client.Shared.Tests/OrdersApiClientTests.cs`
+- `TillApp.Client.WASM/wwwroot/index.html`, `TillApp.Client.MAUI/wwwroot/index.html`, and `docs/PORTFOLIO_ROADMAP.md`

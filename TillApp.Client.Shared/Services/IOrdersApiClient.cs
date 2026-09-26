@@ -31,5 +31,16 @@ public interface IOrdersApiClient
 
     Task<IReadOnlyList<OrderDto>> GetUnpaidOrdersAsync(CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<OrderDto>> GetOrdersAsync(
+        OrderStatus? status = null,
+        string? search = null,
+        DateOnly? from = null,
+        DateOnly? to = null,
+        CancellationToken cancellationToken = default);
+
+    Task<OrderDto> GetOrderAsync(int orderId, CancellationToken cancellationToken = default);
+
     Task<OrderDto> MarkOrderPaidAsync(int orderId, CancellationToken cancellationToken = default);
+
+    Task<OrderDto> CancelOrderAsync(int orderId, CancellationToken cancellationToken = default);
 }
