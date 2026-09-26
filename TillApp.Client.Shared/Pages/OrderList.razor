@@ -1,152 +1,371 @@
 @page "/orders"
 @inject IOrdersApiClient OrdersApiClient
 
-<PageTitle>Unpaid Orders | TillApp</PageTitle>
+<PageTitle>Orders | TillApp</PageTitle>
 
 <div class="page-heading">
     <div>
-        <p class="eyebrow">Payment queue</p>
-        <h1>Unpaid Orders</h1>
-        <p>Review open orders and mark them paid when payment is complete.</p>
+        <p class="eyebrow">Order history</p>
+        <h1>Orders</h1>
+        <p>Review orders and manage pending payments.</p>
     </div>
     <a class="button button-primary" href="/orders/new">New Order</a>
 </div>
 
-@if (_state == LoadState.Loading)
+<section class="history-filters" aria-label="Filter orders">
+    <p class="history-date-note">Date filters use UTC calendar days.</p>
+    <label>
+        Status
+        <select value="@_statusFilter" @onchange="OnStatusChanged">
+            <option value="All">All statuses</option>
+            @foreach (var status in Enum.GetValues<OrderStatus>())
+            {
+                <option value="@status">@status</option>
+            }
+        </select>
+    </label>
+    <label>
+        Search by name or order number
+        <input type="search" @bind="_searchInput" @bind:event="oninput" @onkeydown="OnSearchKeyDown" />
+    </label>
+    <label>
+        From
+        <input type="date" value="@_fromInput" @onchange="args => _fromInput = args.Value?.ToString() ?? string.Empty" />
+    </label>
+    <label>
+        To
+        <input type="date" value="@_toInput" @onchange="args => _toInput = args.Value?.ToString() ?? string.Empty" />
+    </label>
+    <button type="button" class="button button-secondary" disabled="@_isLoading" @onclick="ApplyFiltersAsync">Apply filters</button>
+</section>
+
+@if (_filterError is not null)
+{
+    <div class="status-message status-error" role="alert">@_filterError</div>
+}
+@if (_actionMessage is not null)
+{
+    <div class="status-message @(_actionFailed ? "status-error" : "status-success")" role="@( _actionFailed ? "alert" : "status")">@_actionMessage</div>
+}
+
+@if (_isLoading)
 {
     <div class="state-panel" role="status" aria-live="polite">
         <span class="spinner spinner-dark" aria-hidden="true"></span>
-        <strong>Loading unpaid orders…</strong>
+        <strong>Loading orders…</strong>
     </div>
 }
-else if (_state == LoadState.Error)
+else if (_loadError is not null)
 {
     <div class="state-panel state-error" role="alert">
-        <strong>We couldn’t load the unpaid orders.</strong>
+        <strong>We couldn’t load the orders.</strong>
         <span>@_loadError</span>
-        <button type="button" class="button button-secondary" @onclick="LoadOrdersAsync">Retry</button>
+        <button type="button" class="button button-secondary" @onclick="ApplyFiltersAsync">Retry</button>
     </div>
 }
 else if (_orders.Count == 0)
 {
     <div class="state-panel">
-        <strong>There are no unpaid orders.</strong>
-        <span>New orders will appear here as soon as they are placed.</span>
-        <a class="button button-primary" href="/orders/new">Create an order</a>
+        @if (HasFilters)
+        {
+            <strong>No orders match these filters.</strong>
+            <span>Try changing the status, search, or date range.</span>
+        }
+        else
+        {
+            <strong>There are no orders yet.</strong>
+            <span>New orders will appear here after they are placed.</span>
+            <a class="button button-primary" href="/orders/new">Create an order</a>
+        }
     </div>
 }
 else
 {
-    @if (_actionError is not null)
-    {
-        <div class="status-message status-error" role="alert">@_actionError</div>
-    }
-
-    <div class="orders-grid">
-        @foreach (var order in _orders)
-        {
-            <article class="order-card" @key="order.OrderId">
-                <div class="order-card-heading">
-                    <div>
-                        <span class="order-number">Order #@order.OrderId</span>
-                        <h2>@order.OrderName</h2>
-                    </div>
-                    <strong class="order-amount">@FormatCurrency(order.Amount)</strong>
-                </div>
-
-                <div class="order-meta">@FormatItemCount(order.Items.Count)</div>
-
-                <ul class="order-items">
-                    @foreach (var item in order.Items)
-                    {
-                        <li>
-                            <span>@item.ItemName</span>
-                            <span>@FormatCurrency(item.Price)</span>
-                        </li>
-                    }
-                </ul>
-
-                <button type="button"
-                        class="button paid-button"
-                        disabled="@_payingOrderIds.Contains(order.OrderId)"
-                        @onclick="() => MarkPaidAsync(order)">
-                    @if (_payingOrderIds.Contains(order.OrderId))
-                    {
-                        <span class="spinner" aria-hidden="true"></span>
-                        <span>Updating…</span>
-                    }
-                    else
-                    {
-                        <span>Paid</span>
-                    }
-                </button>
-            </article>
-        }
+    <div class="orders-table-wrap">
+        <table class="orders-table">
+            <thead>
+                <tr>
+                    <th scope="col">Order</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">Total</th>
+                    <th scope="col">Status</th>
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var order in _orders)
+                {
+                    <tr @key="order.OrderId">
+                        <td><a class="order-history-link" href="@($"/orders/{order.OrderId}")">#@order.OrderId</a></td>
+                        <td>@order.OrderName</td>
+                        <td><time datetime="@order.CreatedAt.ToString("O")">@FormatDate(order.CreatedAt)</time></td>
+                        <td>@FormatCurrency(order.Amount)</td>
+                        <td><span class="order-status status-@order.Status.ToString().ToLowerInvariant()">@order.Status</span></td>
+                        <td class="order-row-actions">
+                            <a class="button button-tertiary" href="@($"/orders/{order.OrderId}")">Details</a>
+                            @if (order.Status == OrderStatus.Pending)
+                            {
+                                <button type="button" class="button button-tertiary" disabled="@_busyOrderId.HasValue" @onclick="() => MarkPaidAsync(order)">
+                                    @(IsBusy(order.OrderId) ? "Updating…" : "Mark paid")
+                                </button>
+                                @if (_confirmCancelOrderId == order.OrderId)
+                                {
+                                    <span class="cancel-confirm" role="group" aria-label="Confirm cancel order @order.OrderId">
+                                        <span>Cancel this order?</span>
+                                        <button type="button" class="button button-danger" disabled="@_busyOrderId.HasValue" @onclick="() => CancelAsync(order)">Confirm</button>
+                                        <button type="button" class="button button-tertiary" disabled="@_busyOrderId.HasValue" @onclick="DismissCancel">Keep</button>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <button type="button" class="button button-tertiary" disabled="@_busyOrderId.HasValue" @onclick="() => RequestCancel(order.OrderId)">Cancel</button>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     </div>
 }
 
 @code {
-    private readonly HashSet<int> _payingOrderIds = [];
     private List<OrderDto> _orders = [];
-    private LoadState _state = LoadState.Loading;
+    private string _statusFilter = "All";
+    private string _searchInput = string.Empty;
+    private string _fromInput = string.Empty;
+    private string _toInput = string.Empty;
+    private bool _isLoading = true;
+    private int? _busyOrderId;
+    private int? _confirmCancelOrderId;
     private string? _loadError;
-    private string? _actionError;
+    private string? _filterError;
+    private string? _actionMessage;
+    private bool _actionFailed;
+    private string _appliedStatusFilter = "All";
+    private string _appliedSearchInput = string.Empty;
+    private DateOnly? _appliedFrom;
+    private DateOnly? _appliedTo;
 
-    protected override async Task OnInitializedAsync()
+    private bool HasFilters => _statusFilter != "All" || !string.IsNullOrWhiteSpace(_searchInput)
+                               || !string.IsNullOrWhiteSpace(_fromInput) || !string.IsNullOrWhiteSpace(_toInput);
+
+    protected override async Task OnInitializedAsync() => await LoadOrdersAsync();
+
+    private async Task OnStatusChanged(ChangeEventArgs args)
     {
-        await LoadOrdersAsync();
+        _statusFilter = args.Value?.ToString() ?? "All";
+        await ApplyFiltersAsync();
     }
 
-    private async Task LoadOrdersAsync()
+    private async Task OnSearchKeyDown(KeyboardEventArgs args)
     {
-        _state = LoadState.Loading;
+        if (args.Key == "Enter")
+        {
+            await ApplyFiltersAsync();
+        }
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        if (_isLoading && _orders.Count == 0)
+        {
+            // Prevent overlapping initial/filter requests while still allowing retry after an error.
+            return;
+        }
+
+        if (!TryParseDate(_fromInput, out var from) || !TryParseDate(_toInput, out var to))
+        {
+            _filterError = "Enter valid dates for the selected range.";
+            return;
+        }
+
+        if (from.HasValue && to.HasValue && from > to)
+        {
+            _filterError = "The From date must be on or before the To date.";
+            return;
+        }
+
+        _filterError = null;
+        await LoadOrdersAsync(from, to);
+    }
+
+    private async Task LoadOrdersAsync(DateOnly? from = null, DateOnly? to = null)
+    {
+        _isLoading = true;
         _loadError = null;
-        _actionError = null;
+        _actionMessage = null;
 
         try
         {
-            _orders = (await OrdersApiClient.GetUnpaidOrdersAsync()).ToList();
-            _state = LoadState.Loaded;
+            OrderStatus? status = Enum.TryParse<OrderStatus>(_statusFilter, out var parsedStatus) ? parsedStatus : null;
+            var results = await OrdersApiClient.GetOrdersAsync(
+                status,
+                _searchInput,
+                from,
+                to);
+            _orders = results.ToList();
+            _appliedStatusFilter = _statusFilter;
+            _appliedSearchInput = _searchInput;
+            _appliedFrom = from;
+            _appliedTo = to;
         }
         catch (OrdersApiException exception)
         {
             _loadError = exception.Message;
-            _state = LoadState.Error;
+        }
+        finally
+        {
+            _isLoading = false;
         }
     }
 
     private async Task MarkPaidAsync(OrderDto order)
     {
-        if (!_payingOrderIds.Add(order.OrderId))
+        if (order.Status != OrderStatus.Pending || !TryBeginAction(order.OrderId))
         {
             return;
         }
 
-        _actionError = null;
-
+        _confirmCancelOrderId = null;
+        _actionMessage = null;
         try
         {
-            await OrdersApiClient.MarkOrderPaidAsync(order.OrderId);
-            _orders.RemoveAll(candidate => candidate.OrderId == order.OrderId);
+            var updated = await OrdersApiClient.MarkOrderPaidAsync(order.OrderId);
+            UpdateOrder(updated);
+            _actionFailed = false;
+            _actionMessage = $"Order #{order.OrderId} marked paid.";
         }
         catch (OrdersApiException exception)
         {
-            _actionError = $"Order #{order.OrderId} was not marked paid. {exception.Message}";
+            SetActionError(order.OrderId, exception.Message);
         }
         finally
         {
-            _payingOrderIds.Remove(order.OrderId);
+            _busyOrderId = null;
         }
+    }
+
+    private void RequestCancel(int orderId) => _confirmCancelOrderId = orderId;
+
+    private void DismissCancel() => _confirmCancelOrderId = null;
+
+    private async Task CancelAsync(OrderDto order)
+    {
+        if (order.Status != OrderStatus.Pending || !TryBeginAction(order.OrderId))
+        {
+            return;
+        }
+
+        _confirmCancelOrderId = null;
+        _actionMessage = null;
+        try
+        {
+            var updated = await OrdersApiClient.CancelOrderAsync(order.OrderId);
+            UpdateOrder(updated);
+            _actionFailed = false;
+            _actionMessage = $"Order #{order.OrderId} cancelled.";
+        }
+        catch (OrdersApiException exception)
+        {
+            SetActionError(order.OrderId, exception.Message);
+        }
+        finally
+        {
+            _busyOrderId = null;
+        }
+    }
+
+    private bool TryBeginAction(int orderId)
+    {
+        if (_busyOrderId.HasValue)
+        {
+            return false;
+        }
+
+        _busyOrderId = orderId;
+        return true;
+    }
+
+    private void UpdateOrder(OrderDto updated)
+    {
+        var index = _orders.FindIndex(order => order.OrderId == updated.OrderId);
+        if (index < 0)
+        {
+            return;
+        }
+
+        if (MatchesCurrentFilters(updated))
+        {
+            _orders[index] = updated;
+        }
+        else
+        {
+            _orders.RemoveAt(index);
+        }
+    }
+
+    private bool MatchesCurrentFilters(OrderDto order)
+    {
+        if (Enum.TryParse<OrderStatus>(_appliedStatusFilter, out var status) && order.Status != status)
+        {
+            return false;
+        }
+
+        var search = _appliedSearchInput.Trim();
+        if (search.Length > 0 && !order.OrderName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            && !order.OrderId.ToString().Contains(search, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var created = DateOnly.FromDateTime(order.CreatedAt.ToUniversalTime());
+        if (_appliedFrom.HasValue && created < _appliedFrom.Value)
+        {
+            return false;
+        }
+
+        if (_appliedTo.HasValue && created > _appliedTo.Value)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private void SetActionError(int orderId, string message)
+    {
+        _actionFailed = true;
+        _actionMessage = $"Order #{orderId} was not updated. {message}";
+    }
+
+    private bool IsBusy(int orderId) => _busyOrderId == orderId;
+
+    private static bool TryParseDate(string value, out DateOnly? date)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            date = null;
+            return true;
+        }
+
+        if (DateOnly.TryParseExact(
+                value,
+                "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out var parsed))
+        {
+            date = parsed;
+            return true;
+        }
+
+        date = null;
+        return false;
     }
 
     private static string FormatCurrency(decimal amount) => $"£{amount:0.00}";
 
-    private static string FormatItemCount(int count) => count == 1 ? "1 item" : $"{count} items";
-
-    private enum LoadState
-    {
-        Loading,
-        Loaded,
-        Error
-    }
+    private static string FormatDate(DateTime value) => value.ToLocalTime().ToString("g");
 }

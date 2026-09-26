@@ -1,0 +1,115 @@
+.dashboard-heading-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.dashboard-metrics {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 1.5rem 0 2.5rem;
+}
+
+.dashboard-metric {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    box-shadow: 0 8px 24px rgb(15 23 42 / 5%);
+    display: grid;
+    gap: 0.3rem;
+    min-height: 8.5rem;
+    padding: 1.15rem;
+}
+
+.dashboard-metric span {
+    color: #475569;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.dashboard-metric strong {
+    color: #172033;
+    font-size: clamp(1.65rem, 3vw, 2.2rem);
+    letter-spacing: -0.04em;
+    line-height: 1.1;
+}
+
+.dashboard-metric small {
+    color: #64748b;
+    font-size: 0.75rem;
+}
+
+.metric-pending strong {
+    color: #a16207;
+}
+
+.metric-paid strong {
+    color: #15803d;
+}
+
+.metric-cancelled strong {
+    color: #b91c1c;
+}
+
+.metric-revenue {
+    grid-column: span 2;
+}
+
+.metric-revenue strong {
+    color: #1d4ed8;
+}
+
+.dashboard-recent {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.section-heading {
+    align-items: end;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+}
+
+.section-heading h2 {
+    font-size: 1.4rem;
+}
+
+.dashboard-empty {
+    min-height: 10rem;
+}
+
+.dashboard-recent-table {
+    min-width: 42rem;
+}
+
+@media (max-width: 850px) {
+    .dashboard-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .metric-revenue {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 560px) {
+    .dashboard-heading-actions {
+        width: 100%;
+    }
+
+    .dashboard-metrics {
+        grid-template-columns: 1fr;
+    }
+
+    .metric-revenue {
+        grid-column: auto;
+    }
+
+    .section-heading {
+        align-items: start;
+        flex-direction: column;
+    }
+}

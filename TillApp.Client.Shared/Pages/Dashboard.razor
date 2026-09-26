@@ -1,0 +1,139 @@
+@page "/dashboard"
+@inject IOrdersApiClient OrdersApiClient
+
+<PageTitle>Dashboard | TillApp</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">Daily overview</p>
+        <h1>Dashboard</h1>
+        <p>Order activity for today, using UTC day boundaries.</p>
+    </div>
+    <div class="dashboard-heading-actions">
+        <button type="button" class="button button-secondary" disabled="@_isLoading" @onclick="LoadDashboardAsync">Refresh</button>
+        <a class="button button-primary" href="/orders/new">New Order</a>
+    </div>
+</div>
+
+@if (_isLoading)
+{
+    <div class="state-panel" role="status" aria-live="polite">
+        <span class="spinner spinner-dark" aria-hidden="true"></span>
+        <strong>Loading dashboard…</strong>
+    </div>
+}
+else if (_loadError is not null)
+{
+    <div class="state-panel state-error" role="alert">
+        <strong>We couldn’t load the dashboard.</strong>
+        <span>@_loadError</span>
+        <button type="button" class="button button-secondary" @onclick="LoadDashboardAsync">Retry</button>
+    </div>
+}
+else if (_summary is not null)
+{
+    <section class="dashboard-metrics" aria-label="Order metrics">
+        <article class="dashboard-metric">
+            <span>Today’s Orders</span>
+            <strong>@_summary.TodayOrders</strong>
+            <small>Created today (UTC)</small>
+        </article>
+        <article class="dashboard-metric metric-pending">
+            <span>Pending Orders</span>
+            <strong>@_summary.PendingOrders</strong>
+            <small>Currently awaiting payment</small>
+        </article>
+        <article class="dashboard-metric metric-paid">
+            <span>Paid Orders</span>
+            <strong>@_summary.PaidOrders</strong>
+            <small>Paid today (UTC)</small>
+        </article>
+        <article class="dashboard-metric metric-cancelled">
+            <span>Cancelled Orders</span>
+            <strong>@_summary.CancelledOrders</strong>
+            <small>Cancelled today (UTC)</small>
+        </article>
+        <article class="dashboard-metric metric-revenue">
+            <span>Today’s Revenue</span>
+            <strong>@FormatCurrency(_summary.TodayRevenue)</strong>
+            <small>Paid orders only (UTC)</small>
+        </article>
+    </section>
+
+    <section class="dashboard-recent" aria-labelledby="recent-orders-title">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">Latest activity</p>
+                <h2 id="recent-orders-title">Recent Orders</h2>
+            </div>
+            <a href="/orders">View all orders</a>
+        </div>
+
+        @if (_summary.RecentOrders.Count == 0)
+        {
+            <div class="state-panel dashboard-empty">
+                <strong>No orders yet.</strong>
+                <span>Recent orders will appear here when they are placed.</span>
+            </div>
+        }
+        else
+        {
+            <div class="orders-table-wrap">
+                <table class="orders-table dashboard-recent-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Order</th>
+                            <th scope="col">Name</th>
+                            <th scope="col">Created</th>
+                            <th scope="col">Total</th>
+                            <th scope="col">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var order in _summary.RecentOrders)
+                        {
+                            <tr @key="order.OrderId">
+                                <td><a class="order-history-link" href="@($"/orders/{order.OrderId}")">#@order.OrderId</a></td>
+                                <td>@order.OrderName</td>
+                                <td><time datetime="@order.CreatedAt.ToString("O")">@FormatDate(order.CreatedAt)</time></td>
+                                <td>@FormatCurrency(order.Amount)</td>
+                                <td><span class="order-status status-@order.Status.ToString().ToLowerInvariant()">@order.Status</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private DashboardSummaryDto? _summary;
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync() => await LoadDashboardAsync();
+
+    private async Task LoadDashboardAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        try
+        {
+            _summary = await OrdersApiClient.GetDashboardAsync();
+        }
+        catch (OrdersApiException exception)
+        {
+            _loadError = exception.Message;
+            _summary = null;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static string FormatCurrency(decimal amount) => $"£{amount:0.00}";
+
+    private static string FormatDate(DateTime value) => value.ToLocalTime().ToString("g");
+}

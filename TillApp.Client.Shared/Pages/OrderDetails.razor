@@ -1,0 +1,197 @@
+@page "/orders/{OrderId:int}"
+@inject IOrdersApiClient OrdersApiClient
+
+<PageTitle>Order #@OrderId | TillApp</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">Order details</p>
+        <h1>Order #@OrderId</h1>
+        <p>Order item names and prices are the values recorded when the order was placed.</p>
+    </div>
+    <a class="button button-secondary" href="/orders">Back to orders</a>
+</div>
+
+@if (_isLoading)
+{
+    <div class="state-panel" role="status" aria-live="polite">
+        <span class="spinner spinner-dark" aria-hidden="true"></span>
+        <strong>Loading order…</strong>
+    </div>
+}
+else if (_loadError is not null)
+{
+    <div class="state-panel state-error" role="alert">
+        <strong>We couldn’t load this order.</strong>
+        <span>@_loadError</span>
+        <button type="button" class="button button-secondary" @onclick="LoadOrderAsync">Retry</button>
+    </div>
+}
+else if (_order is not null)
+{
+    @if (_actionMessage is not null)
+    {
+        <div class="status-message @(_actionFailed ? "status-error" : "status-success")" role="@(_actionFailed ? "alert" : "status")">@_actionMessage</div>
+    }
+
+    <section class="order-detail-card" aria-label="Order summary">
+        <div class="order-detail-heading">
+            <div>
+                <p class="eyebrow">Order #@_order.OrderId</p>
+                <h2>@_order.OrderName</h2>
+            </div>
+            <span class="order-status status-@_order.Status.ToString().ToLowerInvariant()">@_order.Status</span>
+        </div>
+
+        <dl class="order-detail-meta">
+            <div><dt>Created</dt><dd><time datetime="@_order.CreatedAt.ToString("O")">@FormatDate(_order.CreatedAt)</time></dd></div>
+            @if (_order.PaidAt.HasValue)
+            {
+                <div><dt>Paid</dt><dd><time datetime="@_order.PaidAt.Value.ToString("O")">@FormatDate(_order.PaidAt.Value)</time></dd></div>
+            }
+            @if (_order.CancelledAt.HasValue)
+            {
+                <div><dt>Cancelled</dt><dd><time datetime="@_order.CancelledAt.Value.ToString("O")">@FormatDate(_order.CancelledAt.Value)</time></dd></div>
+            }
+        </dl>
+
+        <h3>Items</h3>
+        <div class="order-detail-lines">
+            @foreach (var item in _order.Items)
+            {
+                <div class="order-detail-line" @key="item.OrderItemId">
+                    <div>
+                        <strong>@item.ProductName</strong>
+                        <span>@FormatCurrency(item.UnitPrice) × @item.Quantity</span>
+                    </div>
+                    <strong>@FormatCurrency(item.LineTotal)</strong>
+                </div>
+            }
+        </div>
+
+        <div class="order-detail-total"><span>Total</span><strong>@FormatCurrency(_order.Amount)</strong></div>
+
+        @if (_order.Status == OrderStatus.Pending)
+        {
+            <div class="order-detail-actions">
+                <button type="button" class="button button-primary" disabled="@_isSubmitting" @onclick="MarkPaidAsync">
+                    @(_isSubmitting ? "Updating…" : "Mark as paid")
+                </button>
+                @if (_confirmCancel)
+                {
+                    <span class="cancel-confirm" role="group" aria-label="Confirm cancel order">
+                        <span>Cancel this order?</span>
+                        <button type="button" class="button button-danger" disabled="@_isSubmitting" @onclick="CancelAsync">Confirm</button>
+                        <button type="button" class="button button-tertiary" @onclick="() => _confirmCancel = false">Keep</button>
+                    </span>
+                }
+                else
+                {
+                    <button type="button" class="button button-tertiary" disabled="@_isSubmitting" @onclick="() => _confirmCancel = true">Cancel order</button>
+                }
+            </div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public int OrderId { get; set; }
+
+    private OrderDto? _order;
+    private bool _isLoading = true;
+    private bool _isSubmitting;
+    private bool _confirmCancel;
+    private string? _loadError;
+    private string? _actionMessage;
+    private bool _actionFailed;
+
+    protected override async Task OnParametersSetAsync() => await LoadOrderAsync();
+
+    private async Task LoadOrderAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+        try
+        {
+            _order = await OrdersApiClient.GetOrderAsync(OrderId);
+        }
+        catch (OrdersApiException exception)
+        {
+            _loadError = exception.Message;
+            _order = null;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task MarkPaidAsync()
+    {
+        if (_order?.Status != OrderStatus.Pending || !TryBeginSubmit())
+        {
+            return;
+        }
+
+        try
+        {
+            _order = await OrdersApiClient.MarkOrderPaidAsync(OrderId);
+            _actionFailed = false;
+            _actionMessage = $"Order #{OrderId} marked paid.";
+        }
+        catch (OrdersApiException exception)
+        {
+            SetActionError(exception.Message);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_order?.Status != OrderStatus.Pending || !TryBeginSubmit())
+        {
+            return;
+        }
+
+        _confirmCancel = false;
+        try
+        {
+            _order = await OrdersApiClient.CancelOrderAsync(OrderId);
+            _actionFailed = false;
+            _actionMessage = $"Order #{OrderId} cancelled.";
+        }
+        catch (OrdersApiException exception)
+        {
+            SetActionError(exception.Message);
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private bool TryBeginSubmit()
+    {
+        if (_isSubmitting)
+        {
+            return false;
+        }
+
+        _isSubmitting = true;
+        _actionMessage = null;
+        return true;
+    }
+
+    private void SetActionError(string message)
+    {
+        _actionFailed = true;
+        _actionMessage = $"Order #{OrderId} was not updated. {message}";
+    }
+
+    private static string FormatCurrency(decimal amount) => $"£{amount:0.00}";
+
+    private static string FormatDate(DateTime value) => value.ToLocalTime().ToString("g");
+}

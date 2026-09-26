@@ -1,11 +1,19 @@
 using Microsoft.EntityFrameworkCore;
+using TillApp.Server.Infrastructure;
 using TillApp.Server.Data;
 using TillApp.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddProblemDetails();
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+    };
+});
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<TillAppDbContext>(options =>
@@ -16,6 +24,8 @@ builder.Services.AddDbContext<TillAppDbContext>(options =>
     options.UseSqlServer(connectionString);
 });
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IProductCatalogService, ProductCatalogService>();
 
 const string WasmDevelopmentCorsPolicy = "WasmDevelopment";
 builder.Services.AddCors(options =>
@@ -34,6 +44,13 @@ app.UseExceptionHandler();
 
 if (app.Environment.IsDevelopment())
 {
+    await using (var scope = app.Services.CreateAsyncScope())
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<TillAppDbContext>();
+        await dbContext.Database.MigrateAsync();
+        await DevelopmentDataSeeder.SeedAsync(dbContext);
+    }
+
     app.MapOpenApi();
     app.UseCors(WasmDevelopmentCorsPolicy);
 }

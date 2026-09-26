@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using TillApp.Shared.Common;
 
 namespace TillApp.Shared.Orders;
 
@@ -27,10 +26,10 @@ public sealed class UpdateOrderRequest : IValidatableObject
             yield break;
         }
 
-        if (Items is not null && Items.Sum(item => item.Price) > SqlMoney.MaxValue)
+        if (Items is not null && Items.Any(item => item.ProductId == 0 && string.IsNullOrWhiteSpace(item.ItemName)))
         {
             yield return new ValidationResult(
-                "The order total exceeds the SQL Server money range.",
+                "Each order item must specify a product.",
                 [nameof(Items)]);
         }
     }

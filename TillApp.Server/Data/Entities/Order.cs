@@ -1,3 +1,5 @@
+using TillApp.Shared.Orders;
+
 namespace TillApp.Server.Data.Entities;
 
 public sealed class Order
@@ -8,7 +10,13 @@ public sealed class Order
 
     public decimal Amount { get; set; }
 
-    public bool IsPaid { get; set; }
+    public OrderStatus Status { get; set; } = OrderStatus.Pending;
+
+    public DateTime CreatedAt { get; set; }
+
+    public DateTime? PaidAt { get; set; }
+
+    public DateTime? CancelledAt { get; set; }
 
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
 }

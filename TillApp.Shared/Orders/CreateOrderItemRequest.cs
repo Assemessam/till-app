@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using TillApp.Shared.Common;
 
 namespace TillApp.Shared.Orders;
 
@@ -7,7 +6,12 @@ public sealed class CreateOrderItemRequest
 {
     private string _itemName = string.Empty;
 
-    [Required]
+    [Range(0, int.MaxValue)]
+    public int ProductId { get; set; }
+
+    [Range(1, int.MaxValue)]
+    public int Quantity { get; set; } = 1;
+
     [StringLength(100)]
     public string ItemName
     {
@@ -15,6 +19,5 @@ public sealed class CreateOrderItemRequest
         set => _itemName = value?.Trim() ?? string.Empty;
     }
 
-    [SqlMoney]
     public decimal Price { get; set; }
 }

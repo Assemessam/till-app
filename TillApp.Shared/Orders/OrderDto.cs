@@ -4,5 +4,11 @@ public sealed record OrderDto(
     int OrderId,
     string OrderName,
     decimal Amount,
-    bool IsPaid,
-    IReadOnlyList<OrderItemDto> Items);
+    OrderStatus Status,
+    DateTime CreatedAt,
+    DateTime? PaidAt,
+    DateTime? CancelledAt,
+    IReadOnlyList<OrderItemDto> Items)
+{
+    public bool IsPaid => Status == OrderStatus.Paid;
+}
