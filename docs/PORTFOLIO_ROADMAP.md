@@ -1,9 +1,9 @@
 # Portfolio Roadmap
 
 **Total phases:** 12
-**Current phase:** 9 — API Hardening (**Current; not started**)
-**Completed:** 1–8
-**Pending:** 9–12
+**Current phase:** 10 — Automated Tests (**Current; not started**)
+**Completed:** 1–9
+**Pending:** 10–12
 
 | Phase | Status | Scope |
 | --- | --- | --- |
@@ -15,8 +15,8 @@
 | 6. POS / New Order UI | Completed | Load API products by category; support basket quantities, removal/clear, submission, and feedback. |
 | 7. Orders & History | Completed | Add list/detail, status/date/search filters, and pending payment/cancellation actions. |
 | 8. Dashboard | Completed | Add small current-day metrics and recent orders. |
-| 9. API Hardening | Current | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
-| 10. Automated Tests | Pending | Add focused unit/integration coverage for product and order rules. |
+| 9. API Hardening | Completed | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
+| 10. Automated Tests | Current | Add focused unit/integration coverage for product and order rules. |
 | 11. Developer Experience | Pending | Add useful seed data, setup/configuration cleanup, OpenAPI, and practical Docker guidance. |
 | 12. GitHub Release | Pending | Add CI and portfolio-quality README, architecture, setup, API, test, and screenshot guidance. |
 
@@ -85,6 +85,13 @@
 - Recent Orders returns at most eight orders, newest `CreatedAt` first with descending order ID as the tie-breaker. The shared dashboard links directly to Phase 7 order details.
 - Added one shared `/dashboard` page and a Dashboard navigation link for WASM and MAUI. No schema changes or auto-refresh behavior.
 
+## Phase 9 decisions
+
+- Registered a centralized `IExceptionHandler` that maps expected catalog/order domain exceptions to consistent 404/409/400 ProblemDetails and logs unexpected exceptions before returning a non-sensitive 500 ProblemDetails response. Existing controllers now delegate business-error translation to it.
+- Standardized direct missing-resource responses as 404 ProblemDetails and documented validation/error response types on affected endpoints. No successful response contracts changed.
+- Added a shared `OrderQuery` validation model: search is bounded and trimmed, date ranges must be ordered, and conflicting `status`/legacy `isPaid` combinations return validation errors. Legacy compatible filter combinations remain supported.
+- Added positive ID/category-filter validation and structured `ILogger` messages for catalog creates, updates, deletes, and activation changes. Existing async EF Core and server-authoritative decimal/UTC calculations were retained; no schema changes were needed.
+
 ## Phase 1 verification
 
 - `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **23 passed** (SQL Server container healthy).
@@ -152,6 +159,14 @@
 - The SQL-backed Dashboard API test was added and compiles, but **was not run** because `TILLAPP_TEST_CONNECTION_STRING` is not configured in this environment.
 - `git diff --check` — **passed**.
 
+## Phase 9 verification
+
+- `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **24 passed**, including OrderQuery validation tests for date range and legacy-filter consistency.
+- `dotnet build TillApp.Server/TillApp.Server.csproj --no-restore`, `TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore`, and `TillApp.Client.Shared/TillApp.Client.Shared.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore` and `dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
+- SQL-backed hardening tests compile but **were not run** because `TILLAPP_TEST_CONNECTION_STRING` is not configured in this environment.
+- `git diff --check` — **passed**.
+
 ## Files changed by Phase 1
 
 - `docs/PORTFOLIO_ROADMAP.md`
@@ -215,3 +230,11 @@
 - `TillApp.Client.Shared/Services/IOrdersApiClient.cs`, `OrdersApiClient.cs`, and `TillApp.Client.Shared.Tests/DashboardComponentTests.cs`, `OrdersApiClientTests.cs`
 - `TillApp.Server.Tests/DashboardApiTests.cs`
 - `TillApp.Client.WASM/wwwroot/index.html`, `TillApp.Client.MAUI/wwwroot/index.html`, and `docs/PORTFOLIO_ROADMAP.md`
+
+## Files changed by Phase 9
+
+- `TillApp.Server/Infrastructure/ApiExceptionHandler.cs`, `ApiProblems.cs`, `Program.cs`, and category/product/order controllers
+- `TillApp.Server/Services/IOrderService.cs`, `OrderService.cs`, and `ProductCatalogService.cs`
+- `TillApp.Shared/Orders/OrderQuery.cs`
+- `TillApp.Server.Tests/OrdersApiTests.cs` and `TillApp.Client.Shared.Tests/OrderQueryValidationTests.cs`
+- `docs/PORTFOLIO_ROADMAP.md`

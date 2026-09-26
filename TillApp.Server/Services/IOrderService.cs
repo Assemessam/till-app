@@ -5,11 +5,7 @@ namespace TillApp.Server.Services;
 public interface IOrderService
 {
     Task<IReadOnlyList<OrderDto>> GetOrdersAsync(
-        OrderStatus? status,
-        bool? isPaid,
-        string? search,
-        DateOnly? from,
-        DateOnly? to,
+        OrderQuery query,
         CancellationToken cancellationToken);
 
     Task<OrderDto?> GetOrderAsync(int orderId, CancellationToken cancellationToken);

@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
+using TillApp.Server.Infrastructure;
 using TillApp.Server.Services;
 using TillApp.Shared.Catalog;
 
@@ -17,11 +19,14 @@ public sealed class CategoriesController(IProductCatalogService catalogService) 
 
     [HttpGet("{id:int}")]
     [ProducesResponseType<CategoryDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<CategoryDto>> GetCategory(int id, CancellationToken cancellationToken)
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CategoryDto>> GetCategory(
+        [Range(1, int.MaxValue)] int id,
+        CancellationToken cancellationToken)
     {
         var category = await catalogService.GetCategoryAsync(id, cancellationToken);
-        return category is null ? NotFound() : Ok(category);
+        return category is null ? ApiProblems.NotFound(HttpContext, "category") : Ok(category);
     }
 
     [HttpPost]
@@ -32,70 +37,35 @@ public sealed class CategoriesController(IProductCatalogService catalogService) 
         CategoryRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var category = await catalogService.CreateCategoryAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(GetCategory), new { id = category.CategoryId }, category);
-        }
-        catch (ProductCatalogException exception)
-        {
-            return CatalogProblem(exception);
-        }
+        var category = await catalogService.CreateCategoryAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetCategory), new { id = category.CategoryId }, category);
     }
 
     [HttpPut("{id:int}")]
     [ProducesResponseType<CategoryDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CategoryDto>> UpdateCategory(
-        int id,
+        [Range(1, int.MaxValue)] int id,
         CategoryRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var category = await catalogService.UpdateCategoryAsync(id, request, cancellationToken);
-            return category is null ? NotFound() : Ok(category);
-        }
-        catch (ProductCatalogException exception)
-        {
-            return CatalogProblem(exception);
-        }
+        var category = await catalogService.UpdateCategoryAsync(id, request, cancellationToken);
+        return category is null ? ApiProblems.NotFound(HttpContext, "category") : Ok(category);
     }
 
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> DeleteCategory(int id, CancellationToken cancellationToken)
+    public async Task<IActionResult> DeleteCategory(
+        [Range(1, int.MaxValue)] int id,
+        CancellationToken cancellationToken)
     {
-        try
-        {
-            return await catalogService.DeleteCategoryAsync(id, cancellationToken)
-                ? NoContent()
-                : NotFound();
-        }
-        catch (ProductCatalogException exception)
-        {
-            return CatalogProblem(exception);
-        }
+        return await catalogService.DeleteCategoryAsync(id, cancellationToken)
+            ? NoContent()
+            : ApiProblems.NotFound(HttpContext, "category");
     }
-
-    private ObjectResult CatalogProblem(ProductCatalogException exception) =>
-        exception.Error == ProductCatalogError.NotFound
-            ? NotFound(new ProblemDetails
-            {
-                Status = StatusCodes.Status404NotFound,
-                Title = "Category not found",
-                Detail = exception.Message
-            })
-            : Conflict(new ProblemDetails
-            {
-                Status = StatusCodes.Status409Conflict,
-                Title = exception.Error == ProductCatalogError.CategoryHasProducts
-                    ? "Category contains products"
-                    : "Duplicate category name",
-                Detail = exception.Message
-            });
 }

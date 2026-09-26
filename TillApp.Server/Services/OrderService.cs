@@ -11,19 +11,15 @@ public sealed class OrderService(
     ILogger<OrderService> logger) : IOrderService
 {
     public async Task<IReadOnlyList<OrderDto>> GetOrdersAsync(
-        OrderStatus? status,
-        bool? isPaid,
-        string? search,
-        DateOnly? from,
-        DateOnly? to,
+        OrderQuery query,
         CancellationToken cancellationToken)
     {
-        var query = dbContext.Orders
+        var ordersQuery = dbContext.Orders
             .AsNoTracking()
             .Include(order => order.Items)
             .AsQueryable();
 
-        var effectiveStatus = status ?? isPaid switch
+        var effectiveStatus = query.Status ?? query.IsPaid switch
         {
             true => OrderStatus.Paid,
             false => OrderStatus.Pending,
@@ -32,37 +28,37 @@ public sealed class OrderService(
 
         if (effectiveStatus.HasValue)
         {
-            query = query.Where(order => order.Status == effectiveStatus.Value);
+            ordersQuery = ordersQuery.Where(order => order.Status == effectiveStatus.Value);
         }
 
-        if (!string.IsNullOrWhiteSpace(search))
+        if (!string.IsNullOrWhiteSpace(query.Search))
         {
-            var term = search.Trim();
+            var term = query.Search;
             if (int.TryParse(term, out var orderId))
             {
-                query = query.Where(order => order.OrderId == orderId || order.OrderName.Contains(term));
+                ordersQuery = ordersQuery.Where(order => order.OrderId == orderId || order.OrderName.Contains(term));
             }
             else
             {
-                query = query.Where(order => order.OrderName.Contains(term));
+                ordersQuery = ordersQuery.Where(order => order.OrderName.Contains(term));
             }
         }
 
-        if (from.HasValue)
+        if (query.From.HasValue)
         {
-            var fromUtc = DateTime.SpecifyKind(from.Value.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
-            query = query.Where(order => order.CreatedAt >= fromUtc);
+            var fromUtc = DateTime.SpecifyKind(query.From.Value.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+            ordersQuery = ordersQuery.Where(order => order.CreatedAt >= fromUtc);
         }
 
-        if (to.HasValue && to.Value != DateOnly.MaxValue)
+        if (query.To.HasValue && query.To.Value != DateOnly.MaxValue)
         {
             var toExclusive = DateTime.SpecifyKind(
-                to.Value.AddDays(1).ToDateTime(TimeOnly.MinValue),
+                query.To.Value.AddDays(1).ToDateTime(TimeOnly.MinValue),
                 DateTimeKind.Utc);
-            query = query.Where(order => order.CreatedAt < toExclusive);
+            ordersQuery = ordersQuery.Where(order => order.CreatedAt < toExclusive);
         }
 
-        var orders = await query
+        var orders = await ordersQuery
             .OrderByDescending(order => order.CreatedAt)
             .ThenByDescending(order => order.OrderId)
             .ToListAsync(cancellationToken);

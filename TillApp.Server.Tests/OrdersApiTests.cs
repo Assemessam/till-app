@@ -283,6 +283,25 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
         var response = await _client.GetAsync("/api/orders/2147483647");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemResponse>();
+        Assert.Equal("Resource not found", problem?.Title);
+    }
+
+    [Fact]
+    public async Task GetOrders_InvalidDateRangeReturnsValidationProblem()
+    {
+        var response = await _client.GetAsync("/api/orders?from=2026-09-30&to=2026-09-01");
+
+        await AssertValidationProblemAsync(response, "From");
+    }
+
+    [Fact]
+    public async Task GetOrders_ConflictingStatusAndLegacyFilterReturnsValidationProblem()
+    {
+        var response = await _client.GetAsync("/api/orders?status=Paid&isPaid=false");
+
+        await AssertValidationProblemAsync(response, "Status");
     }
 
     private async Task<Product> AddProductAsync(string categoryName, string name, decimal unitPrice, bool isActive = true)

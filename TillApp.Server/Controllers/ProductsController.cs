@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
+using TillApp.Server.Infrastructure;
 using TillApp.Server.Services;
 using TillApp.Shared.Catalog;
 
@@ -10,8 +12,9 @@ public sealed class ProductsController(IProductCatalogService catalogService) : 
 {
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<ProductDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyList<ProductDto>>> GetProducts(
-        [FromQuery] int? categoryId,
+        [FromQuery, Range(1, int.MaxValue)] int? categoryId,
         [FromQuery] bool? isActive,
         CancellationToken cancellationToken)
     {
@@ -21,11 +24,14 @@ public sealed class ProductsController(IProductCatalogService catalogService) : 
 
     [HttpGet("{id:int}")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ProductDto>> GetProduct(int id, CancellationToken cancellationToken)
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ProductDto>> GetProduct(
+        [Range(1, int.MaxValue)] int id,
+        CancellationToken cancellationToken)
     {
         var product = await catalogService.GetProductAsync(id, cancellationToken);
-        return product is null ? NotFound() : Ok(product);
+        return product is null ? ApiProblems.NotFound(HttpContext, "product") : Ok(product);
     }
 
     [HttpPost]
@@ -37,15 +43,8 @@ public sealed class ProductsController(IProductCatalogService catalogService) : 
         ProductRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var product = await catalogService.CreateProductAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(GetProduct), new { id = product.ProductId }, product);
-        }
-        catch (ProductCatalogException exception)
-        {
-            return CatalogProblem(exception);
-        }
+        var product = await catalogService.CreateProductAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetProduct), new { id = product.ProductId }, product);
     }
 
     [HttpPut("{id:int}")]
@@ -54,45 +53,24 @@ public sealed class ProductsController(IProductCatalogService catalogService) : 
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<ProductDto>> UpdateProduct(
-        int id,
+        [Range(1, int.MaxValue)] int id,
         ProductRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var product = await catalogService.UpdateProductAsync(id, request, cancellationToken);
-            return product is null ? NotFound() : Ok(product);
-        }
-        catch (ProductCatalogException exception)
-        {
-            return CatalogProblem(exception);
-        }
+        var product = await catalogService.UpdateProductAsync(id, request, cancellationToken);
+        return product is null ? ApiProblems.NotFound(HttpContext, "product") : Ok(product);
     }
 
     [HttpPatch("{id:int}/active")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ProductDto>> SetProductActive(
-        int id,
+        [Range(1, int.MaxValue)] int id,
         SetProductActiveRequest request,
         CancellationToken cancellationToken)
     {
         var product = await catalogService.SetProductActiveAsync(id, request.IsActive, cancellationToken);
-        return product is null ? NotFound() : Ok(product);
+        return product is null ? ApiProblems.NotFound(HttpContext, "product") : Ok(product);
     }
-
-    private ObjectResult CatalogProblem(ProductCatalogException exception) =>
-        exception.Error == ProductCatalogError.NotFound
-            ? NotFound(new ProblemDetails
-            {
-                Status = StatusCodes.Status404NotFound,
-                Title = "Catalog resource not found",
-                Detail = exception.Message
-            })
-            : Conflict(new ProblemDetails
-            {
-                Status = StatusCodes.Status409Conflict,
-                Title = "Duplicate product name",
-                Detail = exception.Message
-            });
 }

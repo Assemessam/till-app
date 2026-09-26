@@ -5,7 +5,9 @@ using TillApp.Shared.Catalog;
 
 namespace TillApp.Server.Services;
 
-public sealed class ProductCatalogService(TillAppDbContext dbContext) : IProductCatalogService
+public sealed class ProductCatalogService(
+    TillAppDbContext dbContext,
+    ILogger<ProductCatalogService> logger) : IProductCatalogService
 {
     public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken)
     {
@@ -35,6 +37,8 @@ public sealed class ProductCatalogService(TillAppDbContext dbContext) : IProduct
         dbContext.Categories.Add(category);
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        logger.LogInformation("Created category {CategoryId}", category.CategoryId);
+
         return new CategoryDto(category.CategoryId, category.Name);
     }
 
@@ -54,6 +58,8 @@ public sealed class ProductCatalogService(TillAppDbContext dbContext) : IProduct
         await EnsureCategoryNameAvailableAsync(request.Name, categoryId, cancellationToken);
         category.Name = request.Name;
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Updated category {CategoryId}", category.CategoryId);
 
         return new CategoryDto(category.CategoryId, category.Name);
     }
@@ -77,6 +83,7 @@ public sealed class ProductCatalogService(TillAppDbContext dbContext) : IProduct
 
         dbContext.Categories.Remove(category);
         await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Deleted category {CategoryId}", categoryId);
         return true;
     }
 
@@ -146,6 +153,8 @@ public sealed class ProductCatalogService(TillAppDbContext dbContext) : IProduct
         dbContext.Products.Add(product);
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        logger.LogInformation("Created product {ProductId} in category {CategoryId}", product.ProductId, product.CategoryId);
+
         return await GetProductAsync(product.ProductId, cancellationToken)
             ?? throw new InvalidOperationException("The newly created product could not be reloaded.");
     }
@@ -174,6 +183,8 @@ public sealed class ProductCatalogService(TillAppDbContext dbContext) : IProduct
         product.UnitPrice = request.UnitPrice;
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        logger.LogInformation("Updated product {ProductId}", product.ProductId);
+
         return await GetProductAsync(product.ProductId, cancellationToken);
     }
 
@@ -194,6 +205,7 @@ public sealed class ProductCatalogService(TillAppDbContext dbContext) : IProduct
         {
             product.IsActive = isActive;
             await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Set product {ProductId} active state to {IsActive}", product.ProductId, isActive);
         }
 
         return await GetProductAsync(product.ProductId, cancellationToken);

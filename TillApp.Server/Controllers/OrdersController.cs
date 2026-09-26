@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
+using TillApp.Server.Infrastructure;
 using TillApp.Server.Services;
 using TillApp.Shared.Orders;
 
@@ -10,25 +12,25 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
 {
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<OrderDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyList<OrderDto>>> GetOrders(
-        [FromQuery] OrderStatus? status,
-        [FromQuery] bool? isPaid,
-        [FromQuery] string? search,
-        [FromQuery] DateOnly? from,
-        [FromQuery] DateOnly? to,
+        [FromQuery] OrderQuery query,
         CancellationToken cancellationToken)
     {
-        var orders = await orderService.GetOrdersAsync(status, isPaid, search, from, to, cancellationToken);
+        var orders = await orderService.GetOrdersAsync(query, cancellationToken);
         return Ok(orders);
     }
 
     [HttpGet("{id:int}")]
     [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<OrderDto>> GetOrder(int id, CancellationToken cancellationToken)
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<OrderDto>> GetOrder(
+        [Range(1, int.MaxValue)] int id,
+        CancellationToken cancellationToken)
     {
         var order = await orderService.GetOrderAsync(id, cancellationToken);
-        return order is null ? NotFound() : Ok(order);
+        return order is null ? ApiProblems.NotFound(HttpContext, "order") : Ok(order);
     }
 
     [HttpPost]
@@ -38,98 +40,60 @@ public sealed class OrdersController(IOrderService orderService) : ControllerBas
         CreateOrderRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var order = await orderService.CreateOrderAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(GetOrder), new { id = order.OrderId }, order);
-        }
-        catch (OrderDomainException exception)
-        {
-            return OrderProblem(exception);
-        }
+        var order = await orderService.CreateOrderAsync(request, cancellationToken);
+        return CreatedAtAction(nameof(GetOrder), new { id = order.OrderId }, order);
     }
 
     [HttpPut("{id:int}")]
     [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<OrderDto>> UpdateOrder(
-        int id,
+        [Range(1, int.MaxValue)] int id,
         UpdateOrderRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var order = await orderService.UpdateOrderAsync(id, request, cancellationToken);
-            return order is null ? NotFound() : Ok(order);
-        }
-        catch (OrderDomainException exception)
-        {
-            return OrderProblem(exception);
-        }
+        var order = await orderService.UpdateOrderAsync(id, request, cancellationToken);
+        return order is null ? ApiProblems.NotFound(HttpContext, "order") : Ok(order);
     }
 
     [HttpPatch("{id:int}/paid")]
     [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<OrderDto>> MarkOrderPaid(int id, CancellationToken cancellationToken)
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OrderDto>> MarkOrderPaid(
+        [Range(1, int.MaxValue)] int id,
+        CancellationToken cancellationToken)
     {
-        try
-        {
-            var order = await orderService.MarkOrderPaidAsync(id, cancellationToken);
-            return order is null ? NotFound() : Ok(order);
-        }
-        catch (OrderDomainException exception)
-        {
-            return OrderProblem(exception);
-        }
+        var order = await orderService.MarkOrderPaidAsync(id, cancellationToken);
+        return order is null ? ApiProblems.NotFound(HttpContext, "order") : Ok(order);
     }
 
     [HttpPatch("{id:int}/cancel")]
     [ProducesResponseType<OrderDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<OrderDto>> CancelOrder(int id, CancellationToken cancellationToken)
+    public async Task<ActionResult<OrderDto>> CancelOrder(
+        [Range(1, int.MaxValue)] int id,
+        CancellationToken cancellationToken)
     {
-        try
-        {
-            var order = await orderService.CancelOrderAsync(id, cancellationToken);
-            return order is null ? NotFound() : Ok(order);
-        }
-        catch (OrderDomainException exception)
-        {
-            return OrderProblem(exception);
-        }
+        var order = await orderService.CancelOrderAsync(id, cancellationToken);
+        return order is null ? ApiProblems.NotFound(HttpContext, "order") : Ok(order);
     }
 
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteOrder(int id, CancellationToken cancellationToken)
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> DeleteOrder(
+        [Range(1, int.MaxValue)] int id,
+        CancellationToken cancellationToken)
     {
-        try
-        {
-            var deleted = await orderService.DeleteOrderAsync(id, cancellationToken);
-            return deleted ? NoContent() : NotFound();
-        }
-        catch (OrderDomainException exception)
-        {
-            return OrderProblem(exception);
-        }
+        var deleted = await orderService.DeleteOrderAsync(id, cancellationToken);
+        return deleted ? NoContent() : ApiProblems.NotFound(HttpContext, "order");
     }
-
-    private ObjectResult OrderProblem(OrderDomainException exception) =>
-        exception.Error is OrderDomainError.InvalidTransition or OrderDomainError.OrderNotPending
-            ? Conflict(new ProblemDetails
-            {
-                Status = StatusCodes.Status409Conflict,
-                Title = "Invalid order status transition",
-                Detail = exception.Message
-            })
-            : BadRequest(new ProblemDetails
-            {
-                Status = StatusCodes.Status400BadRequest,
-                Title = "Order cannot be created or updated",
-                Detail = exception.Message
-            });
 }
