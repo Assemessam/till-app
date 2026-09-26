@@ -1,17 +1,17 @@
 # Portfolio Roadmap
 
 **Total phases:** 12
-**Current phase:** 4 — Product Management UI (**Current; not started**)
-**Completed:** 1–3
-**Pending:** 4–12
+**Current phase:** 5 — Order Domain Upgrade (**Current; not started**)
+**Completed:** 1–4
+**Pending:** 5–12
 
 | Phase | Status | Scope |
 | --- | --- | --- |
 | 1. Baseline & Roadmap | Completed | Audit the submitted solution, verify its baseline, and maintain this roadmap. |
 | 2. Domain & Database | Completed | Add categories/products and evolve the order schema only as needed. |
 | 3. Product Management API | Completed | Add category/product DTOs, business logic, and REST endpoints. |
-| 4. Product Management UI | Current | Add simple shared category/product management screens. |
-| 5. Order Domain Upgrade | Pending | Add statuses, quantities, product references/snapshots, timestamps, server totals, and order rules. |
+| 4. Product Management UI | Completed | Add simple shared category/product management screens. |
+| 5. Order Domain Upgrade | Current | Add statuses, quantities, product references/snapshots, timestamps, server totals, and order rules. |
 | 6. POS / New Order UI | Pending | Load API products by category; support basket quantities, removal/clear, submission, and feedback. |
 | 7. Orders & History | Pending | Add list/detail, status/date/search filters, and pending payment/cancellation actions. |
 | 8. Dashboard | Pending | Add small current-day metrics and recent orders. |
@@ -50,6 +50,13 @@
 - Duplicate names return `409 ProblemDetails`; missing categories return `404 ProblemDetails`; request shape and price validation use the shared validation attributes. Categories with products cannot be deleted.
 - The shared UI still uses its existing catalogue; replacing it with API-loaded products belongs to Phases 4 and 6.
 
+## Phase 4 decisions
+
+- Added one shared `/catalog` page for category and product management, linked from the shared navigation used by WASM and MAUI.
+- The page uses Phase 3 request/response contracts and API endpoints for category CRUD, product create/update, category/status filtering, and product activation changes. API validation/conflict messages are shown using the existing safe client error handling.
+- Added a shared catalog stylesheet loaded by both hosts. The existing New Order static catalogue remains in place until Phase 6.
+- Phase 3 checkpoint commit: `9181cce` (`Phase 3 - complete product management API`) on the original branch. Phase 4 is committed separately on `feature/phase-4-product-management-ui`.
+
 ## Phase 1 verification
 
 - `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **23 passed** (SQL Server container healthy).
@@ -71,6 +78,14 @@
 - `dotnet build TillApp.Server/TillApp.Server.csproj --no-restore` — **passed**.
 - `git diff --check` — **passed**.
 
+## Phase 4 verification
+
+- `dotnet build TillApp.Client.Shared/TillApp.Client.Shared.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **13 passed**, including 4 catalog API client tests.
+- `dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
+- `git diff --check` — **passed**.
+
 ## Files changed by Phase 1
 
 - `docs/PORTFOLIO_ROADMAP.md`
@@ -90,4 +105,13 @@
 - `TillApp.Server/Controllers/CategoriesController.cs`, `ProductsController.cs`, `Program.cs`
 - `TillApp.Server/Services/IProductCatalogService.cs`, `ProductCatalogService.cs`, `ProductCatalogException.cs`
 - `TillApp.Server.Tests/ProductManagementApiTests.cs`
+- `docs/PORTFOLIO_ROADMAP.md`
+
+## Files changed by Phase 4
+
+- `TillApp.Client.Shared/Pages/Catalog.razor`, `Layout/MainLayout.razor`, `_Imports.razor`
+- `TillApp.Client.Shared/Services/IOrdersApiClient.cs`, `OrdersApiClient.cs`
+- `TillApp.Client.Shared/wwwroot/catalog.css`
+- `TillApp.Client.WASM/wwwroot/index.html`, `TillApp.Client.MAUI/wwwroot/index.html`
+- `TillApp.Client.Shared.Tests/CatalogApiClientTests.cs`
 - `docs/PORTFOLIO_ROADMAP.md`

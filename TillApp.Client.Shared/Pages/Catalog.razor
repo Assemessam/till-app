@@ -1,0 +1,507 @@
+@page "/catalog"
+@inject IOrdersApiClient ApiClient
+
+<PageTitle>Catalog | TillApp</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">Product management</p>
+        <h1>Catalog</h1>
+        <p>Manage the categories and products available to the counter team.</p>
+    </div>
+    <a class="button button-secondary" href="/orders/new">New Order</a>
+</div>
+
+@if (_successMessage is not null)
+{
+    <div class="status-message status-success" role="status">@_successMessage</div>
+}
+
+@if (_errorMessage is not null)
+{
+    <div class="status-message status-error" role="alert">
+        <strong>@_errorTitle</strong>
+        <span>@_errorMessage</span>
+        @if (_validationErrors.Count > 0)
+        {
+            <ul>
+                @foreach (var error in _validationErrors)
+                {
+                    <li>@error</li>
+                }
+            </ul>
+        }
+    </div>
+}
+
+@if (_isLoading)
+{
+    <div class="state-panel" role="status">
+        <span class="spinner spinner-dark" aria-hidden="true"></span>
+        <strong>Loading catalog…</strong>
+    </div>
+}
+else
+{
+    <div class="catalog-workspace">
+        <section class="panel catalog-panel" aria-labelledby="categories-heading">
+            <div class="section-heading">
+                <div>
+                    <span class="section-step">Catalog</span>
+                    <h2 id="categories-heading">Categories</h2>
+                </div>
+                @if (!_editingCategory)
+                {
+                    <button type="button" class="button button-primary" disabled="@_isSaving" @onclick="BeginNewCategory">
+                        Add Category
+                    </button>
+                }
+            </div>
+
+            @if (_editingCategory)
+            {
+                <EditForm Model="_categoryForm" OnValidSubmit="SaveCategoryAsync" class="catalog-form">
+                    <DataAnnotationsValidator />
+                    <h3>@(_categoryId.HasValue ? "Edit category" : "New category")</h3>
+                    <div class="field-group">
+                        <label for="category-name">Category name</label>
+                        <InputText id="category-name" class="text-input" maxlength="100" @bind-Value="_categoryForm.Name" />
+                        <ValidationMessage For="@(() => _categoryForm.Name)" />
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="button button-primary" disabled="@_isSaving">
+                            @(_isSaving ? "Saving…" : "Save Category")
+                        </button>
+                        <button type="button" class="button button-secondary" disabled="@_isSaving" @onclick="CancelCategoryEdit">Cancel</button>
+                    </div>
+                </EditForm>
+            }
+
+            @if (_categories.Count == 0)
+            {
+                <div class="catalog-empty">No categories yet. Add a category to start organizing products.</div>
+            }
+            else
+            {
+                <ul class="catalog-list">
+                    @foreach (var category in _categories)
+                    {
+                        <li @key="category.CategoryId">
+                            <strong>@category.Name</strong>
+                            <div class="catalog-actions">
+                                <button type="button" class="button button-secondary button-compact" disabled="@(_isSaving || _editingCategory)" @onclick="() => BeginEditCategory(category)">
+                                    Edit
+                                </button>
+                                <button type="button"
+                                        class="button button-danger button-compact"
+                                        disabled="@(_deletingCategoryIds.Contains(category.CategoryId) || _isSaving || _editingCategory)"
+                                        @onclick="() => DeleteCategoryAsync(category)">
+                                    @(_deletingCategoryIds.Contains(category.CategoryId) ? "Deleting…" : "Delete")
+                                </button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+                <p class="field-hint">Categories that still contain products cannot be deleted.</p>
+            }
+        </section>
+
+        <section class="panel catalog-panel" aria-labelledby="products-heading">
+            <div class="section-heading">
+                <div>
+                    <span class="section-step">Catalog</span>
+                    <h2 id="products-heading">Products</h2>
+                </div>
+                @if (!_editingProduct)
+                {
+                    <button type="button" class="button button-primary" disabled="@(_isSaving || _categories.Count == 0)" @onclick="BeginNewProduct">
+                        Add Product
+                    </button>
+                }
+            </div>
+
+            <div class="catalog-filters">
+                <div class="field-group">
+                    <label for="category-filter">Category</label>
+                    <select id="category-filter" class="text-input" @bind="_categoryFilter" @bind:after="LoadProductsAsync">
+                        <option value="">All categories</option>
+                        @foreach (var category in _categories)
+                        {
+                            <option value="@category.CategoryId">@category.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="field-group">
+                    <label for="status-filter">Status</label>
+                    <select id="status-filter" class="text-input" @bind="_statusFilter" @bind:after="LoadProductsAsync">
+                        <option value="all">All products</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+            </div>
+
+            @if (_editingProduct)
+            {
+                <EditForm Model="_productForm" OnValidSubmit="SaveProductAsync" class="catalog-form">
+                    <DataAnnotationsValidator />
+                    <h3>@(_productId.HasValue ? "Edit product" : "New product")</h3>
+                    <div class="field-group">
+                        <label for="product-name">Product name</label>
+                        <InputText id="product-name" class="text-input" maxlength="100" @bind-Value="_productForm.Name" />
+                        <ValidationMessage For="@(() => _productForm.Name)" />
+                    </div>
+                    <div class="field-group">
+                        <label for="product-category">Category</label>
+                        <InputSelect id="product-category" class="text-input" @bind-Value="_productForm.CategoryId">
+                            @foreach (var category in _categories)
+                            {
+                                <option value="@category.CategoryId">@category.Name</option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="@(() => _productForm.CategoryId)" />
+                    </div>
+                    <div class="field-group">
+                        <label for="product-price">Unit price (£)</label>
+                        <InputNumber id="product-price" class="text-input" min="0.0001" step="0.01" @bind-Value="_productForm.UnitPrice" />
+                        <ValidationMessage For="@(() => _productForm.UnitPrice)" />
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="button button-primary" disabled="@_isSaving">
+                            @(_isSaving ? "Saving…" : "Save Product")
+                        </button>
+                        <button type="button" class="button button-secondary" disabled="@_isSaving" @onclick="CancelProductEdit">Cancel</button>
+                    </div>
+                </EditForm>
+            }
+
+            @if (_isLoadingProducts)
+            {
+                <div class="catalog-empty" role="status"><span class="spinner spinner-dark" aria-hidden="true"></span> Loading products…</div>
+            }
+            else if (_products.Count == 0)
+            {
+                <div class="catalog-empty">No products match these filters.</div>
+            }
+            else
+            {
+                <div class="catalog-table-wrap">
+                    <table class="catalog-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Product</th>
+                                <th scope="col">Category</th>
+                                <th scope="col">Price</th>
+                                <th scope="col">Status</th>
+                                <th scope="col"><span class="visually-hidden">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var product in _products)
+                            {
+                                <tr @key="product.ProductId">
+                                    <td data-label="Product"><strong>@product.Name</strong></td>
+                                    <td data-label="Category">@product.CategoryName</td>
+                                    <td data-label="Price">@FormatCurrency(product.UnitPrice)</td>
+                                    <td data-label="Status"><span class="catalog-badge @(product.IsActive ? "badge-active" : "badge-inactive")">@(product.IsActive ? "Active" : "Inactive")</span></td>
+                                    <td data-label="Actions">
+                                        <div class="catalog-actions">
+                                            <button type="button" class="button button-secondary button-compact" disabled="@(_isSaving || _updatingProductIds.Contains(product.ProductId))" @onclick="() => BeginEditProduct(product)">
+                                                Edit
+                                            </button>
+                                            <button type="button"
+                                                    class="button @(product.IsActive ? "button-danger" : "button-secondary") button-compact"
+                                                    disabled="@(_isSaving || _updatingProductIds.Contains(product.ProductId))"
+                                                    @onclick="() => ToggleProductActiveAsync(product)">
+                                                @(_updatingProductIds.Contains(product.ProductId) ? "Updating…" : product.IsActive ? "Deactivate" : "Reactivate")
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private readonly HashSet<int> _deletingCategoryIds = [];
+    private readonly HashSet<int> _updatingProductIds = [];
+    private IReadOnlyList<CategoryDto> _categories = [];
+    private IReadOnlyList<ProductDto> _products = [];
+    private CategoryRequest _categoryForm = new();
+    private ProductRequest _productForm = new();
+    private int? _categoryId;
+    private int? _productId;
+    private string _categoryFilter = string.Empty;
+    private string _statusFilter = "all";
+    private string? _successMessage;
+    private string? _errorTitle;
+    private string? _errorMessage;
+    private IReadOnlyList<string> _validationErrors = [];
+    private bool _isLoading = true;
+    private bool _isLoadingProducts;
+    private bool _isSaving;
+
+    private bool _editingCategory => _categoryId.HasValue || _showNewCategoryForm;
+    private bool _editingProduct => _productId.HasValue || _showNewProductForm;
+    private bool _showNewCategoryForm;
+    private bool _showNewProductForm;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _categories = await ApiClient.GetCategoriesAsync();
+            await LoadProductsAsync();
+        }
+        catch (OrdersApiException exception)
+        {
+            SetError("Catalog unavailable", exception);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadProductsAsync()
+    {
+        _isLoadingProducts = true;
+        try
+        {
+            int? categoryId = int.TryParse(_categoryFilter, out var parsedCategoryId) ? parsedCategoryId : null;
+            bool? isActive = _statusFilter switch
+            {
+                "active" => true,
+                "inactive" => false,
+                _ => null
+            };
+
+            _products = await ApiClient.GetProductsAsync(categoryId, isActive);
+            ClearError();
+        }
+        catch (OrdersApiException exception)
+        {
+            SetError("Products could not be loaded", exception);
+        }
+        finally
+        {
+            _isLoadingProducts = false;
+        }
+    }
+
+    private void BeginNewCategory()
+    {
+        ClearMessages();
+        _categoryId = null;
+        _categoryForm = new CategoryRequest();
+        _showNewCategoryForm = true;
+    }
+
+    private void BeginEditCategory(CategoryDto category)
+    {
+        ClearMessages();
+        _categoryId = category.CategoryId;
+        _categoryForm = new CategoryRequest { Name = category.Name };
+        _showNewCategoryForm = false;
+    }
+
+    private async Task SaveCategoryAsync()
+    {
+        if (_isSaving)
+        {
+            return;
+        }
+
+        _isSaving = true;
+        ClearMessages();
+        try
+        {
+            if (_categoryId.HasValue)
+            {
+                await ApiClient.UpdateCategoryAsync(_categoryId.Value, _categoryForm);
+                _successMessage = "Category updated.";
+            }
+            else
+            {
+                await ApiClient.CreateCategoryAsync(_categoryForm);
+                _successMessage = "Category created.";
+            }
+
+            _categoryId = null;
+            _showNewCategoryForm = false;
+            _categories = await ApiClient.GetCategoriesAsync();
+            await LoadProductsAsync();
+        }
+        catch (OrdersApiException exception)
+        {
+            SetError("Category could not be saved", exception);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private void CancelCategoryEdit()
+    {
+        _categoryId = null;
+        _showNewCategoryForm = false;
+        ClearMessages();
+    }
+
+    private async Task DeleteCategoryAsync(CategoryDto category)
+    {
+        if (!_deletingCategoryIds.Add(category.CategoryId))
+        {
+            return;
+        }
+
+        ClearMessages();
+        try
+        {
+            await ApiClient.DeleteCategoryAsync(category.CategoryId);
+            _successMessage = $"{category.Name} category deleted.";
+            _categories = await ApiClient.GetCategoriesAsync();
+            if (_categoryFilter == category.CategoryId.ToString())
+            {
+                _categoryFilter = string.Empty;
+            }
+
+            await LoadProductsAsync();
+        }
+        catch (OrdersApiException exception)
+        {
+            SetError("Category could not be deleted", exception);
+        }
+        finally
+        {
+            _deletingCategoryIds.Remove(category.CategoryId);
+        }
+    }
+
+    private void BeginNewProduct()
+    {
+        if (_categories.Count == 0)
+        {
+            return;
+        }
+
+        ClearMessages();
+        _productId = null;
+        _productForm = new ProductRequest
+        {
+            CategoryId = int.TryParse(_categoryFilter, out var selectedCategoryId)
+                ? selectedCategoryId
+                : _categories[0].CategoryId
+        };
+        _showNewProductForm = true;
+    }
+
+    private void BeginEditProduct(ProductDto product)
+    {
+        ClearMessages();
+        _productId = product.ProductId;
+        _productForm = new ProductRequest
+        {
+            CategoryId = product.CategoryId,
+            Name = product.Name,
+            UnitPrice = product.UnitPrice
+        };
+        _showNewProductForm = false;
+    }
+
+    private async Task SaveProductAsync()
+    {
+        if (_isSaving)
+        {
+            return;
+        }
+
+        _isSaving = true;
+        ClearMessages();
+        try
+        {
+            if (_productId.HasValue)
+            {
+                await ApiClient.UpdateProductAsync(_productId.Value, _productForm);
+                _successMessage = "Product updated.";
+            }
+            else
+            {
+                await ApiClient.CreateProductAsync(_productForm);
+                _successMessage = "Product created.";
+            }
+
+            _productId = null;
+            _showNewProductForm = false;
+            await LoadProductsAsync();
+        }
+        catch (OrdersApiException exception)
+        {
+            SetError("Product could not be saved", exception);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private void CancelProductEdit()
+    {
+        _productId = null;
+        _showNewProductForm = false;
+        ClearMessages();
+    }
+
+    private async Task ToggleProductActiveAsync(ProductDto product)
+    {
+        if (!_updatingProductIds.Add(product.ProductId))
+        {
+            return;
+        }
+
+        ClearMessages();
+        try
+        {
+            await ApiClient.SetProductActiveAsync(product.ProductId, !product.IsActive);
+            _successMessage = product.IsActive ? "Product deactivated." : "Product reactivated.";
+            await LoadProductsAsync();
+        }
+        catch (OrdersApiException exception)
+        {
+            SetError("Product status could not be changed", exception);
+        }
+        finally
+        {
+            _updatingProductIds.Remove(product.ProductId);
+        }
+    }
+
+    private void SetError(string title, OrdersApiException exception)
+    {
+        _errorTitle = title;
+        _errorMessage = exception.Message;
+        _validationErrors = exception.ValidationErrors.Values.SelectMany(errors => errors).ToList();
+        _successMessage = null;
+    }
+
+    private void ClearError()
+    {
+        _errorTitle = null;
+        _errorMessage = null;
+        _validationErrors = [];
+    }
+
+    private void ClearMessages()
+    {
+        ClearError();
+        _successMessage = null;
+    }
+
+    private static string FormatCurrency(decimal amount) => $"£{amount:0.00}";
+}

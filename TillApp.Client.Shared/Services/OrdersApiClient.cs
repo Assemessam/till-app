@@ -1,12 +1,109 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using TillApp.Shared.Orders;
+using TillApp.Shared.Catalog;
 
 namespace TillApp.Client.Shared.Services;
 
 public sealed class OrdersApiClient(HttpClient httpClient) : IOrdersApiClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            () => httpClient.GetAsync("api/categories", cancellationToken),
+            cancellationToken);
+
+        return await ReadRequiredAsync<List<CategoryDto>>(response, cancellationToken);
+    }
+
+    public async Task<CategoryDto> CreateCategoryAsync(
+        CategoryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            () => httpClient.PostAsJsonAsync("api/categories", request, cancellationToken),
+            cancellationToken);
+
+        return await ReadRequiredAsync<CategoryDto>(response, cancellationToken);
+    }
+
+    public async Task<CategoryDto> UpdateCategoryAsync(
+        int categoryId,
+        CategoryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            () => httpClient.PutAsJsonAsync($"api/categories/{categoryId}", request, cancellationToken),
+            cancellationToken);
+
+        return await ReadRequiredAsync<CategoryDto>(response, cancellationToken);
+    }
+
+    public async Task DeleteCategoryAsync(int categoryId, CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            () => httpClient.DeleteAsync($"api/categories/{categoryId}", cancellationToken),
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProductDto>> GetProductsAsync(
+        int? categoryId = null,
+        bool? isActive = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>();
+        if (categoryId.HasValue)
+        {
+            query.Add($"categoryId={categoryId.Value}");
+        }
+
+        if (isActive.HasValue)
+        {
+            query.Add($"isActive={isActive.Value.ToString().ToLowerInvariant()}");
+        }
+
+        var path = "api/products" + (query.Count > 0 ? $"?{string.Join('&', query)}" : string.Empty);
+        using var response = await SendAsync(() => httpClient.GetAsync(path, cancellationToken), cancellationToken);
+        return await ReadRequiredAsync<List<ProductDto>>(response, cancellationToken);
+    }
+
+    public async Task<ProductDto> CreateProductAsync(
+        ProductRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            () => httpClient.PostAsJsonAsync("api/products", request, cancellationToken),
+            cancellationToken);
+
+        return await ReadRequiredAsync<ProductDto>(response, cancellationToken);
+    }
+
+    public async Task<ProductDto> UpdateProductAsync(
+        int productId,
+        ProductRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            () => httpClient.PutAsJsonAsync($"api/products/{productId}", request, cancellationToken),
+            cancellationToken);
+
+        return await ReadRequiredAsync<ProductDto>(response, cancellationToken);
+    }
+
+    public async Task<ProductDto> SetProductActiveAsync(
+        int productId,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/products/{productId}/active")
+        {
+            Content = JsonContent.Create(new SetProductActiveRequest(isActive))
+        };
+        using var response = await SendAsync(() => httpClient.SendAsync(request, cancellationToken), cancellationToken);
+        return await ReadRequiredAsync<ProductDto>(response, cancellationToken);
+    }
 
     public async Task<OrderDto> CreateOrderAsync(
         CreateOrderRequest request,
