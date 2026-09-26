@@ -3,12 +3,22 @@ using System.Globalization;
 using System.Text.Json;
 using TillApp.Shared.Orders;
 using TillApp.Shared.Catalog;
+using TillApp.Shared.Dashboard;
 
 namespace TillApp.Client.Shared.Services;
 
 public sealed class OrdersApiClient(HttpClient httpClient) : IOrdersApiClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<DashboardSummaryDto> GetDashboardAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            () => httpClient.GetAsync("api/dashboard", cancellationToken),
+            cancellationToken);
+
+        return await ReadRequiredAsync<DashboardSummaryDto>(response, cancellationToken);
+    }
 
     public async Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default)
     {

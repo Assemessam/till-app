@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using TillApp.Client.Shared.Services;
 using TillApp.Shared.Orders;
+using TillApp.Shared.Dashboard;
 
 namespace TillApp.Client.Shared.Tests;
 
@@ -81,6 +82,37 @@ public sealed class OrdersApiClientTests
         var order = await client.CancelOrderAsync(42);
 
         Assert.Equal(OrderStatus.Cancelled, order.Status);
+    }
+
+    [Fact]
+    public async Task GetDashboard_UsesDashboardEndpointAndReturnsMetricsAndRecentOrders()
+    {
+        var expected = new DashboardSummaryDto(
+            12,
+            3,
+            7,
+            2,
+            126.50m,
+            [new RecentOrderDto(42, "Table 4", 18.50m, OrderStatus.Paid, DateTime.UtcNow)]);
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("/api/dashboard", request.RequestUri?.AbsolutePath);
+            return JsonResponse(expected);
+        });
+        var client = CreateClient(handler);
+
+        var summary = await client.GetDashboardAsync();
+
+        Assert.Equal(12, summary.TodayOrders);
+        Assert.Equal(3, summary.PendingOrders);
+        Assert.Equal(7, summary.PaidOrders);
+        Assert.Equal(2, summary.CancelledOrders);
+        Assert.Equal(126.50m, summary.TodayRevenue);
+        var recent = Assert.Single(summary.RecentOrders);
+        Assert.Equal(42, recent.OrderId);
+        Assert.Equal("Table 4", recent.OrderName);
+        Assert.Equal(OrderStatus.Paid, recent.Status);
     }
 
     [Fact]

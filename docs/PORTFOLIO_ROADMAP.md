@@ -1,9 +1,9 @@
 # Portfolio Roadmap
 
 **Total phases:** 12
-**Current phase:** 8 — Dashboard (**Current; not started**)
-**Completed:** 1–7
-**Pending:** 8–12
+**Current phase:** 9 — API Hardening (**Current; not started**)
+**Completed:** 1–8
+**Pending:** 9–12
 
 | Phase | Status | Scope |
 | --- | --- | --- |
@@ -14,8 +14,8 @@
 | 5. Order Domain Upgrade | Completed | Add statuses, quantities, product references/snapshots, timestamps, server totals, and order rules. |
 | 6. POS / New Order UI | Completed | Load API products by category; support basket quantities, removal/clear, submission, and feedback. |
 | 7. Orders & History | Completed | Add list/detail, status/date/search filters, and pending payment/cancellation actions. |
-| 8. Dashboard | Current | Add small current-day metrics and recent orders. |
-| 9. API Hardening | Pending | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
+| 8. Dashboard | Completed | Add small current-day metrics and recent orders. |
+| 9. API Hardening | Current | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
 | 10. Automated Tests | Pending | Add focused unit/integration coverage for product and order rules. |
 | 11. Developer Experience | Pending | Add useful seed data, setup/configuration cleanup, OpenAPI, and practical Docker guidance. |
 | 12. GitHub Release | Pending | Add CI and portfolio-quality README, architecture, setup, API, test, and screenshot guidance. |
@@ -78,6 +78,13 @@
 - Added a shared order detail route. Details use Phase 5 product-name/unit-price snapshots; Pending orders offer Pay and confirmed Cancel actions, and successful transitions update or remove the row to match active filters.
 - Added only the required query parameters and client calls (`status`, `search`, `from`, `to`, detail, cancel). No schema changes or Phase 8 dashboard work.
 
+## Phase 8 decisions
+
+- Added `GET /api/dashboard` with a dedicated summary DTO/service. EF Core performs filtered counts, a paid-total sum, and a bounded recent-order projection; the endpoint does not load all orders or order items.
+- Today's Orders uses `CreatedAt` during the current UTC day. Pending Orders is the current count across all dates. Paid Orders and Cancelled Orders count transitions (`PaidAt`/`CancelledAt`) during today UTC; Today's Revenue sums persisted `Amount` for those orders paid today.
+- Recent Orders returns at most eight orders, newest `CreatedAt` first with descending order ID as the tie-breaker. The shared dashboard links directly to Phase 7 order details.
+- Added one shared `/dashboard` page and a Dashboard navigation link for WASM and MAUI. No schema changes or auto-refresh behavior.
+
 ## Phase 1 verification
 
 - `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **23 passed** (SQL Server container healthy).
@@ -135,6 +142,16 @@
 - SQL-backed order query integration tests were added but **not run** because `TILLAPP_TEST_CONNECTION_STRING` is not configured in this environment.
 - `git diff --check` — **passed**.
 
+## Phase 8 verification
+
+- `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **21 passed**, including Dashboard rendering of metrics/recent order links, loading/error states, and API contract coverage.
+- `dotnet build TillApp.Client.Shared/TillApp.Client.Shared.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
+- `dotnet build TillApp.Server/TillApp.Server.csproj --no-restore` and `dotnet build TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **passed**, 0 warnings/errors.
+- The SQL-backed Dashboard API test was added and compiles, but **was not run** because `TILLAPP_TEST_CONNECTION_STRING` is not configured in this environment.
+- `git diff --check` — **passed**.
+
 ## Files changed by Phase 1
 
 - `docs/PORTFOLIO_ROADMAP.md`
@@ -188,4 +205,13 @@
 - `TillApp.Client.Shared/Services/IOrdersApiClient.cs`, `OrdersApiClient.cs`, and `wwwroot/order-history.css`
 - `TillApp.Server/Controllers/OrdersController.cs`, `Services/IOrderService.cs`, and `Services/OrderService.cs`
 - `TillApp.Server.Tests/OrdersApiTests.cs`, `TillApp.Client.Shared.Tests/OrdersApiClientTests.cs`
+- `TillApp.Client.WASM/wwwroot/index.html`, `TillApp.Client.MAUI/wwwroot/index.html`, and `docs/PORTFOLIO_ROADMAP.md`
+
+## Files changed by Phase 8
+
+- `TillApp.Shared/Dashboard/DashboardSummaryDto.cs`, `RecentOrderDto.cs`
+- `TillApp.Server/Controllers/DashboardController.cs`, `Services/IDashboardService.cs`, `DashboardService.cs`, and `Program.cs`
+- `TillApp.Client.Shared/Pages/Dashboard.razor`, `Layout/MainLayout.razor`, `_Imports.razor`, and `wwwroot/dashboard.css`
+- `TillApp.Client.Shared/Services/IOrdersApiClient.cs`, `OrdersApiClient.cs`, and `TillApp.Client.Shared.Tests/DashboardComponentTests.cs`, `OrdersApiClientTests.cs`
+- `TillApp.Server.Tests/DashboardApiTests.cs`
 - `TillApp.Client.WASM/wwwroot/index.html`, `TillApp.Client.MAUI/wwwroot/index.html`, and `docs/PORTFOLIO_ROADMAP.md`

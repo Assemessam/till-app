@@ -16,6 +16,7 @@ builder.Services.AddDbContext<TillAppDbContext>(options =>
     options.UseSqlServer(connectionString);
 });
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IProductCatalogService, ProductCatalogService>();
 
 const string WasmDevelopmentCorsPolicy = "WasmDevelopment";

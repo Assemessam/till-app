@@ -1,11 +1,14 @@
 using TillApp.Shared.Orders;
 using TillApp.Shared.Catalog;
+using TillApp.Shared.Dashboard;
 
 namespace TillApp.Client.Shared.Services;
 
 public interface IOrdersApiClient
 {
     Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(CancellationToken cancellationToken = default);
+
+    Task<DashboardSummaryDto> GetDashboardAsync(CancellationToken cancellationToken = default);
 
     Task<CategoryDto> CreateCategoryAsync(CategoryRequest request, CancellationToken cancellationToken = default);
 
