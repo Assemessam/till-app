@@ -1,9 +1,9 @@
 # Portfolio Roadmap
 
 **Total phases:** 12
-**Current phase:** 10 — Automated Tests (**Current; not started**)
-**Completed:** 1–9
-**Pending:** 10–12
+**Current phase:** 11 — Developer Experience (**Current; not started**)
+**Completed:** 1–10
+**Pending:** 11–12
 
 | Phase | Status | Scope |
 | --- | --- | --- |
@@ -16,8 +16,8 @@
 | 7. Orders & History | Completed | Add list/detail, status/date/search filters, and pending payment/cancellation actions. |
 | 8. Dashboard | Completed | Add small current-day metrics and recent orders. |
 | 9. API Hardening | Completed | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
-| 10. Automated Tests | Current | Add focused unit/integration coverage for product and order rules. |
-| 11. Developer Experience | Pending | Add useful seed data, setup/configuration cleanup, OpenAPI, and practical Docker guidance. |
+| 10. Automated Tests | Completed | Add focused unit/integration coverage for product and order rules. |
+| 11. Developer Experience | Current | Add useful seed data, setup/configuration cleanup, OpenAPI, and practical Docker guidance. |
 | 12. GitHub Release | Pending | Add CI and portfolio-quality README, architecture, setup, API, test, and screenshot guidance. |
 
 ## Baseline recorded in Phase 1
@@ -91,6 +91,12 @@
 - Standardized direct missing-resource responses as 404 ProblemDetails and documented validation/error response types on affected endpoints. No successful response contracts changed.
 - Added a shared `OrderQuery` validation model: search is bounded and trimmed, date ranges must be ordered, and conflicting `status`/legacy `isPaid` combinations return validation errors. Legacy compatible filter combinations remain supported.
 - Added positive ID/category-filter validation and structured `ILogger` messages for catalog creates, updates, deletes, and activation changes. Existing async EF Core and server-authoritative decimal/UTC calculations were retained; no schema changes were needed.
+
+## Phase 10 decisions
+
+- Test inventory: `TillApp.Server.Tests` is the SQL Server API/integration suite; `TillApp.Client.Shared.Tests` covers API-client contracts, shared POS/order/dashboard state, component rendering, and request validation. Existing coverage was retained rather than duplicated.
+- Ran the SQL suite safely against the existing local `tillapp-sqlserver` container using the dedicated disposable `TillAppTests` database. The connection string was supplied only to the test process from the container's local configuration; no credentials or connection strings were written to source control. The README's existing `TILLAPP_TEST_CONNECTION_STRING` convention remains the documented setup.
+- Added focused API coverage for multi-product authoritative totals, required order names, deterministic newest-first order history, 404 trace IDs, and exact UTC dashboard boundaries. No production behavior changed for testing.
 
 ## Phase 1 verification
 
@@ -167,6 +173,14 @@
 - SQL-backed hardening tests compile but **were not run** because `TILLAPP_TEST_CONNECTION_STRING` is not configured in this environment.
 - `git diff --check` — **passed**.
 
+## Phase 10 verification
+
+- `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore` — **41 passed** against the real SQL Server `TillAppTests` database.
+- `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **24 passed**.
+- `dotnet tool run dotnet-ef migrations has-pending-model-changes ...` — **passed**; no model changes since the latest migration.
+- `dotnet build TillApp.Server/TillApp.Server.csproj --no-restore`, `TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-restore`, `TillApp.Client.Shared/TillApp.Client.Shared.csproj --no-restore`, `TillApp.Client.WASM/TillApp.Client.WASM.csproj --no-restore`, and `TillApp.Client.MAUI/TillApp.Client.MAUI.csproj -f net10.0-android --no-restore` — **passed**, 0 warnings/errors.
+- `git diff --check` — **passed**.
+
 ## Files changed by Phase 1
 
 - `docs/PORTFOLIO_ROADMAP.md`
@@ -237,4 +251,9 @@
 - `TillApp.Server/Services/IOrderService.cs`, `OrderService.cs`, and `ProductCatalogService.cs`
 - `TillApp.Shared/Orders/OrderQuery.cs`
 - `TillApp.Server.Tests/OrdersApiTests.cs` and `TillApp.Client.Shared.Tests/OrderQueryValidationTests.cs`
+- `docs/PORTFOLIO_ROADMAP.md`
+
+## Files changed by Phase 10
+
+- `TillApp.Server.Tests/OrdersApiTests.cs` and `DashboardApiTests.cs`
 - `docs/PORTFOLIO_ROADMAP.md`

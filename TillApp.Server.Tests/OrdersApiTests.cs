@@ -78,6 +78,36 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Create_MultipleProductsUsesEachAuthoritativePriceAndQuantity()
+    {
+        var burger = await AddProductAsync("Food", "Burger", 5.00m);
+        var tea = await AddProductAsync("Drinks", "Tea", 2.40m);
+
+        var order = await CreateOrderAsync(CreateRequest(
+            "Mixed order",
+            (burger.ProductId, 2),
+            (tea.ProductId, 3)));
+
+        Assert.Equal(17.20m, order.Amount);
+        Assert.Collection(
+            order.Items,
+            item =>
+            {
+                Assert.Equal("Burger", item.ProductName);
+                Assert.Equal(5.00m, item.UnitPrice);
+                Assert.Equal(2, item.Quantity);
+                Assert.Equal(10.00m, item.LineTotal);
+            },
+            item =>
+            {
+                Assert.Equal("Tea", item.ProductName);
+                Assert.Equal(2.40m, item.UnitPrice);
+                Assert.Equal(3, item.Quantity);
+                Assert.Equal(7.20m, item.LineTotal);
+            });
+    }
+
+    [Fact]
     public async Task Create_CombinesRepeatedProductLinesIntoOneQuantity()
     {
         var fries = await AddProductAsync("Food", "Fries", 3.25m);
@@ -170,6 +200,17 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
         });
 
         await AssertValidationProblemAsync(response, "Items");
+    }
+
+    [Fact]
+    public async Task Create_MissingOrderNameReturnsValidationProblem()
+    {
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var request = CreateRequest("", (product.ProductId, 1));
+
+        var response = await _client.PostAsJsonAsync("/api/orders", request);
+
+        await AssertValidationProblemAsync(response, "OrderName");
     }
 
     [Fact]
@@ -278,6 +319,24 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetOrders_ReturnsNewestFirstWithOrderIdTieBreaker()
+    {
+        var product = await AddProductAsync("Drinks", "Tea", 2.40m);
+        var oldest = await CreateOrderAsync(CreateRequest("Oldest", (product.ProductId, 1)));
+        var firstAtSameTime = await CreateOrderAsync(CreateRequest("First tie", (product.ProductId, 1)));
+        var secondAtSameTime = await CreateOrderAsync(CreateRequest("Second tie", (product.ProductId, 1)));
+        await SetCreatedAtAsync(oldest.OrderId, new DateTime(2026, 9, 15, 10, 0, 0, DateTimeKind.Utc));
+        await SetCreatedAtAsync(firstAtSameTime.OrderId, new DateTime(2026, 9, 15, 12, 0, 0, DateTimeKind.Utc));
+        await SetCreatedAtAsync(secondAtSameTime.OrderId, new DateTime(2026, 9, 15, 12, 0, 0, DateTimeKind.Utc));
+
+        var orders = await _client.GetFromJsonAsync<List<OrderDto>>("/api/orders");
+
+        Assert.Equal(
+            [secondAtSameTime.OrderId, firstAtSameTime.OrderId, oldest.OrderId],
+            orders!.Select(order => order.OrderId));
+    }
+
+    [Fact]
     public async Task GetOrder_UnknownIdReturnsNotFound()
     {
         var response = await _client.GetAsync("/api/orders/2147483647");
@@ -286,6 +345,7 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         var problem = await response.Content.ReadFromJsonAsync<ProblemResponse>();
         Assert.Equal("Resource not found", problem?.Title);
+        Assert.False(string.IsNullOrWhiteSpace(problem?.TraceId));
     }
 
     [Fact]
@@ -371,5 +431,5 @@ public sealed class OrdersApiTests(OrderApiFactory factory) : IAsyncLifetime
 
     private sealed record ValidationProblemResponse(Dictionary<string, string[]> Errors);
 
-    private sealed record ProblemResponse(string? Title, string? Detail, int? Status);
+    private sealed record ProblemResponse(string? Title, string? Detail, int? Status, string? TraceId);
 }
