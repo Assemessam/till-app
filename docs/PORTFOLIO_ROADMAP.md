@@ -1,9 +1,9 @@
 # Portfolio Roadmap
 
 **Total phases:** 12
-**Current phase:** 11 — Developer Experience (**Current; not started**)
-**Completed:** 1–10
-**Pending:** 11–12
+**Current phase:** 12 — GitHub Release (**Current; not started**)
+**Completed:** 1–11
+**Pending:** 12
 
 | Phase | Status | Scope |
 | --- | --- | --- |
@@ -17,8 +17,8 @@
 | 8. Dashboard | Completed | Add small current-day metrics and recent orders. |
 | 9. API Hardening | Completed | Standardize validation/ProblemDetails, exception handling, logging, contracts, async, and integrity checks. |
 | 10. Automated Tests | Completed | Add focused unit/integration coverage for product and order rules. |
-| 11. Developer Experience | Current | Add useful seed data, setup/configuration cleanup, OpenAPI, and practical Docker guidance. |
-| 12. GitHub Release | Pending | Add CI and portfolio-quality README, architecture, setup, API, test, and screenshot guidance. |
+| 11. Developer Experience | Completed | Add useful seed data, setup/configuration cleanup, OpenAPI, and practical Docker guidance. |
+| 12. GitHub Release | Current | Add CI and portfolio-quality README, architecture, setup, API, test, and screenshot guidance. |
 
 ## Baseline recorded in Phase 1
 
@@ -97,6 +97,25 @@
 - Test inventory: `TillApp.Server.Tests` is the SQL Server API/integration suite; `TillApp.Client.Shared.Tests` covers API-client contracts, shared POS/order/dashboard state, component rendering, and request validation. Existing coverage was retained rather than duplicated.
 - Ran the SQL suite safely against the existing local `tillapp-sqlserver` container using the dedicated disposable `TillAppTests` database. The connection string was supplied only to the test process from the container's local configuration; no credentials or connection strings were written to source control. The README's existing `TILLAPP_TEST_CONNECTION_STRING` convention remains the documented setup.
 - Added focused API coverage for multi-product authoritative totals, required order names, deterministic newest-first order history, 404 trace IDs, and exact UTC dashboard boundaries. No production behavior changed for testing.
+
+## Phase 11 decisions
+
+- Development startup applies pending EF migrations, then seeds only missing Food, Drinks, and Desserts categories and seven sample products. Existing category/product values are never overwritten; startup in Testing/Production does not migrate or seed.
+- Kept the existing SQL Server Compose service, ignored `.env`, connection-string environment-variable conventions, built-in ASP.NET OpenAPI JSON endpoint, and separate `TillAppTests` database. Added `docs/DEVELOPMENT.md` with verified local setup, client startup, migrations, API docs, Android, and safe test-database instructions; no new UI/package dependency or secret was added.
+
+## Phase 11 verification
+
+- `docker compose config --quiet` — **passed**; existing SQL Server service was healthy.
+- `dotnet test TillApp.Server.Tests/TillApp.Server.Tests.csproj --no-build` — **41 passed** against the dedicated `TillAppTests` database.
+- `dotnet test TillApp.Client.Shared.Tests/TillApp.Client.Shared.Tests.csproj --no-restore` — **24 passed**.
+- `dotnet build TillApp.sln --no-restore` — **passed**, including Server, Shared, WASM, MAUI Android, and test projects; 0 warnings/errors.
+- Ran Development API against isolated `TillAppPhase11Verification`: all migrations applied; restart retained exactly 3 categories/7 sample products and did not overwrite a deliberately changed Burger price. OpenAPI returned 200 with expected API paths; WASM host returned 200 and its configured origin received CORS headers.
+- `git diff --check` — **passed**.
+
+## Files changed by Phase 11
+
+- `TillApp.Server/Data/DevelopmentDataSeeder.cs`, `TillApp.Server/Program.cs`
+- `docs/DEVELOPMENT.md`, `docs/PORTFOLIO_ROADMAP.md`
 
 ## Phase 1 verification
 
